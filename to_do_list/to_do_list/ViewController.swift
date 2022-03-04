@@ -58,6 +58,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         // Do any additional setup after loading the view.
         // Read the data in Realm
         data = realm.objects(checkListItem.self).map({ $0 })
+        data = data.sorted(by: {$0.date<$1.date}) //Now list ordered by deadline ASC
         
         table.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         table.delegate = self
@@ -164,6 +165,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     
     @objc func refresh() {
         data = realm.objects(checkListItem.self).map({ $0 })
+        data = data.sorted(by: {$0.date<$1.date}) //Now list ordered by deadline ASC
         table.reloadData()
     }
 

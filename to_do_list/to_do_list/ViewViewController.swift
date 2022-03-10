@@ -732,10 +732,10 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
                     dayEval.first?.tot_finish += myItem.budget * ratio
                 }
                 
-                // Scale both the time spent and the budget to reflect the left over task load.
-                let ratioLeft = max(1.0 - ratio, 0.0)
-                myItem.budget *= ratioLeft
-                myItem.timeSpent *= ratioLeft
+                // Subtract used budget from both the time spent and the budget to reflect the left over task load.
+                let usedBudget = ratio * myItem.budget
+                myItem.budget -= min(usedBudget, myItem.budget) // budget can only go to 0.
+                myItem.timeSpent -= min(usedBudget, myItem.timeSpent) // time spent can only go to 0.
                 
                 try! self.realm.commitWrite()
             }

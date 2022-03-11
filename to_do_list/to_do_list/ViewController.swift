@@ -53,6 +53,8 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     
     private var perfData = [dailyPerfEval]()
     
+    var timer: Timer!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
@@ -63,6 +65,9 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         table.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         table.delegate = self
         table.dataSource = self
+        
+        // Updates every 0.5 minute.
+        timer = Timer.scheduledTimer(timeInterval: 30.0, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
         
 //        let refreshBut = UIButton(type: .system)
 //        refreshBut.frame = CGRect(x: 15, y: 700, width: 100, height: 50)

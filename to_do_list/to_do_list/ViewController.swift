@@ -44,6 +44,7 @@ class dailyPerfEval: Object {
 class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource {
     
     @IBOutlet var table: UITableView!
+    //@IBOutlet var scroll: UIScrollView!
     
     private let realm = try! Realm()
     
@@ -104,21 +105,21 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         if (data[indexPath.row].finished) {
             //doneString = "Done!"
-            colorSign = UIColor.green
+            colorSign = UIColor.init(red: 0.384, green: 0.792, blue: 0.314, alpha: 1.0)
             textCol = UIColor.darkText
         } else if (data[indexPath.row].checkIn) {
-            colorSign = UIColor.yellow
+            colorSign = UIColor.init(red: 1.0, green: 0.847, blue: 0.153, alpha: 1.0)
             textCol = UIColor.darkText
             
         } else if (data[indexPath.row].date.timeIntervalSinceNow <= 0.0) {
             //doneString = "Urgent!"
-            colorSign = UIColor.red
+            colorSign = UIColor.init(red: 0.831, green: 0.165, blue: 0.204, alpha: 1.0)
         } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * 6.0) {
             //doneString = "Attention!"
-            colorSign = UIColor.orange
+            colorSign = UIColor.init(red: 0.969, green: 0.549, blue: 0.216, alpha: 1.0)
         } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * 24.0) {
             //doneString = "Today!"
-            colorSign = UIColor.purple
+            colorSign = UIColor.init(red: 0.416, green: 0.196, blue: 0.647, alpha: 1.0)
             textCol = UIColor.lightText
         }
         

@@ -128,7 +128,7 @@
         <scene sceneID="aEa-xI-dFf">
             <objects>
                 <viewController storyboardIdentifier="view" id="u5n-3g-0K0" customClass="ViewViewController" customModule="to_do_list" customModuleProvider="target" sceneMemberID="viewController">
-                    <view key="view" contentMode="scaleToFill" id="kIV-s1-JRt">
+                    <view key="view" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" layoutMarginsFollowReadableWidth="YES" id="kIV-s1-JRt">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>

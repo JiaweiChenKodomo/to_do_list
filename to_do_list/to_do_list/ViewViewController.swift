@@ -62,6 +62,9 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
             self.canNotify = granted
         }
         
+        let scrollView = UIScrollView()
+        scrollView.frame = self.view.bounds
+        
         itemLabel.text = item?.item
         dateLabel.text = Self.dateFormatter.string(from: item!.date)
         BLabel.text = String(format: "%.1f hours", item!.budget)
@@ -87,7 +90,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         checkInBut.layer.borderWidth = 1.0
         checkInBut.layer.borderColor = UIColor.blue.cgColor
         checkInBut.addTarget(self, action: #selector(didCheckIn), for: .touchUpInside)
-        self.view.addSubview(checkInBut)
+        //self.view.addSubview(checkInBut)
+        scrollView.addSubview(checkInBut)
         
         let checkTimeBut = UIButton(type: .system)
         checkTimeBut.frame = CGRect(x: 255, y: 400, width: 100, height: 50)
@@ -95,7 +99,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         checkTimeBut.layer.borderWidth = 1.0
         checkTimeBut.layer.borderColor = UIColor.blue.cgColor
         checkTimeBut.addTarget(self, action: #selector(didAdjust), for: .touchUpInside)
-        self.view.addSubview(checkTimeBut)
+        //self.view.addSubview(checkTimeBut)
+        scrollView.addSubview(checkTimeBut)
         
         
         let checkOutBut = UIButton(type: .system)
@@ -104,7 +109,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         checkOutBut.layer.borderWidth = 1.0
         checkOutBut.layer.borderColor = UIColor.blue.cgColor
         checkOutBut.addTarget(self, action: #selector(didCheckOut), for: .touchUpInside)
-        self.view.addSubview(checkOutBut)
+        //self.view.addSubview(checkOutBut)
+        scrollView.addSubview(checkOutBut)
         
         let finishBut = UIButton(type: .system)
         finishBut.frame = CGRect(x: 15, y: 500, width: 100, height: 50)
@@ -112,7 +118,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         finishBut.layer.borderWidth = 1.0
         finishBut.layer.borderColor = UIColor.blue.cgColor
         finishBut.addTarget(self, action: #selector(didFinish), for: .touchUpInside)
-        self.view.addSubview(finishBut)
+        //self.view.addSubview(finishBut)
+        scrollView.addSubview(finishBut)
         
         let partialFinishBut = UIButton(type: .system)
         partialFinishBut.frame = CGRect(x: 135, y: 500, width: 130, height: 50)
@@ -120,7 +127,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         partialFinishBut.layer.borderWidth = 1.0
         partialFinishBut.layer.borderColor = UIColor.blue.cgColor
         partialFinishBut.addTarget(self, action: #selector(didPartialFinish), for: .touchUpInside)
-        self.view.addSubview(partialFinishBut)
+        //self.view.addSubview(partialFinishBut)
+        scrollView.addSubview(partialFinishBut)
         
         let modBut = UIButton(type: .system)
         modBut.frame = CGRect(x: 285, y: 500, width: 70, height: 50)
@@ -128,7 +136,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         modBut.layer.borderWidth = 1.0
         modBut.layer.borderColor = UIColor.blue.cgColor
         modBut.addTarget(self, action: #selector(didTapMod), for: .touchUpInside)
-        self.view.addSubview(modBut)
+        //self.view.addSubview(modBut)
+        scrollView.addSubview(modBut)
         
         let addCalBut = UIButton(type: .system)
         addCalBut.frame = CGRect(x: 15, y: 600, width: 130, height: 50)
@@ -136,7 +145,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         addCalBut.layer.borderWidth = 1.0
         addCalBut.layer.borderColor = UIColor.blue.cgColor
         addCalBut.addTarget(self, action: #selector(didAddCal), for: .touchUpInside)
-        self.view.addSubview(addCalBut)
+        //self.view.addSubview(addCalBut)
+        scrollView.addSubview(addCalBut)
         
         let focusBut = UIButton(type: .system)
         focusBut.frame = CGRect(x: 165, y: 600, width: 190, height: 50)
@@ -144,7 +154,10 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
         focusBut.layer.borderWidth = 1.0
         focusBut.layer.borderColor = UIColor.blue.cgColor
         focusBut.addTarget(self, action: #selector(didFocus), for: .touchUpInside)
-        self.view.addSubview(focusBut)
+        //self.view.addSubview(focusBut)
+        scrollView.addSubview(focusBut)
+        
+        self.view.addSubview(scrollView)
     }
     @objc func step() {
         if !item!.checkIn {

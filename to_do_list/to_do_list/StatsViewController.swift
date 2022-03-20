@@ -12,7 +12,7 @@ import TinyConstraints
 
 import RealmSwift
 
-class StatsViewController: UIViewController, ChartViewDelegate, UITextFieldDelegate {
+class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     
     var textField = UITextField()
     
@@ -21,6 +21,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UITextFieldDeleg
     var days = 14
     
     private let realm = try! Realm()
+    
+    var scrollView: UIScrollView!
     
     lazy var lineChart: LineChartView = {
         let chartView = LineChartView()
@@ -58,7 +60,16 @@ class StatsViewController: UIViewController, ChartViewDelegate, UITextFieldDeleg
         setData(days: days)
         
         // Do any additional setup after loading the view.
-        view.addSubview(lineChart)
+        //
+        scrollView = UIScrollView(frame: view.bounds)
+        scrollView.contentSize = view.bounds.size
+        view.addSubview(scrollView)
+        scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                
+        scrollView.addSubview(lineChart)
+        
+        
+        //view.addSubview(lineChart)
         lineChart.centerInSuperview()
         lineChart.width(to: view)
         lineChart.heightToWidth(of: view)
@@ -69,7 +80,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UITextFieldDeleg
         claerBut.layer.borderWidth = 1.0
         claerBut.layer.borderColor = UIColor.blue.cgColor
         claerBut.addTarget(self, action: #selector(didTapClear), for: .touchUpInside)
-        self.view.addSubview(claerBut)
+        //self.view.addSubview(claerBut)
+        scrollView.addSubview(claerBut)
         
         let plotBut = UIButton(type: .system)
         plotBut.frame = CGRect(x: 255, y: 600, width: 100, height: 50)
@@ -77,19 +89,23 @@ class StatsViewController: UIViewController, ChartViewDelegate, UITextFieldDeleg
         plotBut.layer.borderWidth = 1.0
         plotBut.layer.borderColor = UIColor.blue.cgColor
         plotBut.addTarget(self, action: #selector(didTapPlot), for: .touchUpInside)
-        self.view.addSubview(plotBut)
+        //self.view.addSubview(plotBut)
+        scrollView.addSubview(plotBut)
         
         textField.delegate = self
         textField.frame = CGRect(x: 15, y: 700, width: 200, height: 50)
         textField.borderStyle = UITextField.BorderStyle.roundedRect
         textField.text = "Put # of records to keep"
-        self.view.addSubview(textField)
+        //self.view.addSubview(textField)
+        scrollView.addSubview(textField)
         
         textFieldUp.delegate = self
         textFieldUp.frame = CGRect(x: 15, y: 600, width: 200, height: 50)
         textFieldUp.borderStyle = UITextField.BorderStyle.roundedRect
         textFieldUp.text = "Put # of records to plot"
-        self.view.addSubview(textFieldUp)
+        //self.view.addSubview(textFieldUp)
+        scrollView.addSubview(textFieldUp)
+        
     }
     
     func textFieldDidBeginEditing(_ textField: UITextField) {

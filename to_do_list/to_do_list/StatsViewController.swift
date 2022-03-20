@@ -65,13 +65,13 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         scrollView.contentSize = view.bounds.size
         view.addSubview(scrollView)
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                
         scrollView.addSubview(lineChart)
-        
+        scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
         //view.addSubview(lineChart)
         lineChart.centerInSuperview()
-        lineChart.width(to: view)
+        //lineChart.width(to: scrollView)
+        lineChart.width(to: scrollView, multiplier: 0.95)
         lineChart.heightToWidth(of: view)
         
         let claerBut = UIButton(type: .system)
@@ -106,6 +106,33 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldUp)
         
+        
+        // Set zooming behavior
+        scrollView.delegate = self
+        //scrollView.minimumZoomScale = 0.1
+        //scrollView.maximumZoomScale = 4.0
+        //scrollView.zoomScale = 1.0
+        setZoomScale()
+        
+    }
+    
+    override func viewWillLayoutSubviews() {
+        setZoomScale()
+    }
+    
+    func viewForZoomingInScrollView(scrollView: UIScrollView) -> UIView? {
+        // zoom for chart view
+        return lineChart
+    }
+    
+    func setZoomScale() {
+        let chartViewSize = lineChart.bounds.size
+        let scrollViewSize = scrollView.bounds.size
+        let widthScale = scrollViewSize.width / chartViewSize.width
+        let heightScale = scrollViewSize.height / chartViewSize.height
+            
+        scrollView.minimumZoomScale = min(widthScale, heightScale)
+        scrollView.zoomScale = 1.0
     }
     
     func textFieldDidBeginEditing(_ textField: UITextField) {
@@ -255,6 +282,12 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         let data = LineChartData(dataSets: [set1, set2, set3, set4])
         
         lineChart.data = data
+    }
+    
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        let offsetX = max((scrollView.bounds.width - scrollView.contentSize.width) * 0.5, 0)
+        let offsetY = max((scrollView.bounds.height - scrollView.contentSize.height) * 0.5, 0)
+        scrollView.contentInset = UIEdgeInsets(top: offsetY, left: offsetX, bottom: 0, right: 0)
     }
     
 //    func dbg_gen_test_data() {

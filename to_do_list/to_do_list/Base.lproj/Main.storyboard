@@ -240,20 +240,8 @@
                     <view key="view" contentMode="scaleToFill" id="Zul-pe-muF">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <subviews>
-                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="eIB-pQ-6Fh" customClass="LineChartView" customModule="Charts">
-                                <rect key="frame" x="40" y="164" width="338" height="234"/>
-                                <color key="backgroundColor" systemColor="systemGray5Color"/>
-                            </view>
-                        </subviews>
                         <viewLayoutGuide key="safeArea" id="bnO-yh-BaA"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                        <constraints>
-                            <constraint firstItem="eIB-pQ-6Fh" firstAttribute="leading" secondItem="bnO-yh-BaA" secondAttribute="leading" constant="40" id="SNn-nz-Lm4"/>
-                            <constraint firstItem="bnO-yh-BaA" firstAttribute="bottom" secondItem="eIB-pQ-6Fh" secondAttribute="bottom" constant="464" id="Sap-jN-oKO"/>
-                            <constraint firstItem="eIB-pQ-6Fh" firstAttribute="top" secondItem="bnO-yh-BaA" secondAttribute="top" constant="120" id="bkF-e7-dNa"/>
-                            <constraint firstItem="bnO-yh-BaA" firstAttribute="trailing" secondItem="eIB-pQ-6Fh" secondAttribute="trailing" constant="36" id="h0r-jZ-7hA"/>
-                        </constraints>
                     </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="5k0-cK-lhh" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -411,9 +399,6 @@
         </namedColor>
         <systemColor name="systemBackgroundColor">
             <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
-        <systemColor name="systemGray5Color">
-            <color red="0.89803921568627454" green="0.89803921568627454" blue="0.91764705882352937" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
         </systemColor>
     </resources>
 </document>

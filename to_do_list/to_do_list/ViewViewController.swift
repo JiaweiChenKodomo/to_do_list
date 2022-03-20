@@ -10,7 +10,7 @@ import UIKit
 import EventKit
 import EventKitUI
 
-class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotificationCenterDelegate {
+class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollViewDelegate, UNUserNotificationCenterDelegate {
     
     public var item: checkListItem?
     
@@ -22,6 +22,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
     @IBOutlet var TLabel: UILabel!
     @IBOutlet var BLabel: UILabel!
     @IBOutlet var ElapsedTimeLabel: UILabel!
+    
+    @IBOutlet var scrollView: UIScrollView!
     
     private let store =  EKEventStore()
     
@@ -62,8 +64,11 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UNUserNotif
             self.canNotify = granted
         }
         
-        let scrollView = UIScrollView()
-        scrollView.frame = self.view.bounds
+        scrollView = UIScrollView(frame: view.bounds)
+        scrollView.contentSize = view.bounds.size
+        view.addSubview(scrollView)
+        scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        //scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
         itemLabel.text = item?.item
         dateLabel.text = Self.dateFormatter.string(from: item!.date)

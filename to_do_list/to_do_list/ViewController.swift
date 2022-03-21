@@ -121,6 +121,10 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
             //doneString = "Today!"
             colorSign = UIColor.init(red: 0.416, green: 0.196, blue: 0.647, alpha: 1.0)
             textCol = UIColor.lightText
+        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * 48.0) {
+            //doneString = "Tomorrow!"
+            colorSign = UIColor.init(red: 0.643, green: 0.196, blue: 0.647, alpha: 1.0)
+            textCol = UIColor.lightText
         }
         
         cell.backgroundColor = colorSign

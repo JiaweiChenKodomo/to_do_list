@@ -16,7 +16,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     
     public var deletionHandler: (() -> Void)?
     
-    @IBOutlet var itemLabel: UILabel!
+    
     @IBOutlet var dateLabel: UILabel!
     @IBOutlet var TvBLabel: UILabel!
     @IBOutlet var TLabel: UILabel!
@@ -70,7 +70,13 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         //scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
+        let itemLabel = UILabel()
         itemLabel.text = item?.item
+        itemLabel.frame = CGRect(x: 0, y: 154, width: 407, height: 74)
+        itemLabel.lineBreakMode = .byWordWrapping
+        itemLabel.numberOfLines = 3
+        scrollView.addSubview(itemLabel)
+        
         dateLabel.text = Self.dateFormatter.string(from: item!.date)
         BLabel.text = String(format: "%.1f hours", item!.budget)
         if item!.checkIn {
@@ -88,6 +94,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         }
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(didTapDelete))
+        
+        let taskLabel = UILabel()
+        taskLabel.frame = CGRect(x: 0, y: 126, width: 40, height: 21)
+        taskLabel.textAlignment = .left
+        taskLabel.text = "Task:"
+        scrollView.addSubview(taskLabel)
         
         let checkInBut = UIButton(type: .system)
         checkInBut.frame = CGRect(x: 15, y: 400, width: 100, height: 50)

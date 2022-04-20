@@ -18,7 +18,11 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     
     var textFieldUp = UITextField()
     
+    var textFieldMid = UITextField()
+    
     var days = 14
+    
+    var wdays = 14
     
     private let realm = try! Realm()
     
@@ -57,7 +61,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         //dbg_gen_test_data()
         //Try loading data first.
-        setData(days: days)
+        setData(days: days, wdays: wdays)
         
         // Do any additional setup after loading the view.
         //
@@ -93,7 +97,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         scrollView.addSubview(plotBut)
         
         textField.delegate = self
-        textField.frame = CGRect(x: 15, y: 700, width: 200, height: 50)
+        textField.frame = CGRect(x: 15, y: 720, width: 200, height: 50)
         textField.borderStyle = UITextField.BorderStyle.roundedRect
         textField.text = "Put # of records to keep"
         //self.view.addSubview(textField)
@@ -105,6 +109,13 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         textFieldUp.text = "Put # of records to plot"
         //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldUp)
+        
+        textFieldMid.delegate = self
+        textFieldMid.frame = CGRect(x: 15, y: 660, width: 200, height: 50)
+        textFieldMid.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldMid.text = "Put window size"
+        //self.view.addSubview(textFieldUp)
+        scrollView.addSubview(textFieldMid)
         
         
         // Set zooming behavior
@@ -155,9 +166,9 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         print(entry)
     }
     
-    func setData(days: Int) {
+    func setData(days: Int, wdays: Int) {
         
-        if days <= 0 {
+        if days <= 0 || wdays <= 0 {
             return
         }
         
@@ -168,8 +179,13 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             return Calendar.current.date(byAdding: components, to: todayStart)!
         }() // This is in fact today's end.
         
-        let twoWeeksAgoEnd: Date = {
-          let components = DateComponents(day: -days)
+//        let twoWeeksAgoEnd: Date = {
+//          let components = DateComponents(day: -days)
+//          return Calendar.current.date(byAdding: components, to: yesterday)!
+//        }()
+        
+        let fourWeeksAgoEnd: Date = {
+          let components = DateComponents(day: (-days - wdays + 1))
           return Calendar.current.date(byAdding: components, to: yesterday)!
         }()
         
@@ -177,7 +193,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
 //        print(format.string(from: twoWeeksAgoEnd))
 //        print(format.string(from: yesterday))
         
-        let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", twoWeeksAgoEnd, yesterday)
+        let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", fourWeeksAgoEnd, yesterday)
         
         if dayEval14.isEmpty {
             let yVal = [ChartDataEntry(x: 0, y: 0.0)]
@@ -204,12 +220,22 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             return
         }
         
+        var rawVal = [Double]()
+        rawVal.reserveCapacity(days+wdays-1)
+        var rawVal2 = [Double]()
+        rawVal2.reserveCapacity(days+wdays-1)
+        
         var yVal = [ChartDataEntry]()
         yVal.reserveCapacity(days)
         var yVal2 = [ChartDataEntry]()
         yVal2.reserveCapacity(days)
+        var aveVal = [ChartDataEntry]()
+        aveVal.reserveCapacity(days)
+        var aveVal2 = [ChartDataEntry]()
+        aveVal2.reserveCapacity(days)
+        
         var aa = 0.0
-        var prevTime = Calendar.current.startOfDay(for:twoWeeksAgoEnd)
+        var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
 //        print("##########")
         for dayEval in dayEval14 {
 //            print(format.string(from: dayEval.date))
@@ -220,45 +246,61 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
                 // add n zero days where n is the no. of difference in days.
                 var bb = 1 // Start with 1, because, e.g., records are on 11 and 14, then only need to pad 2.
                 while bb < diffTime.day! {
-                    yVal.append(ChartDataEntry(x: aa, y: 0.0))
-                    yVal2.append(ChartDataEntry(x: aa, y: 0.0))
+                    rawVal.append(0.0)
+                    rawVal2.append(0.0)
                     aa += 1.0
                     bb += 1
                 }
             }
             
-            yVal.append(ChartDataEntry(x: aa, y: dayEval.tot_time))
-            yVal2.append(ChartDataEntry(x: aa, y: dayEval.tot_finish))
+            rawVal.append(dayEval.tot_time)
+            rawVal2.append(dayEval.tot_finish)
             aa += 1.0
             
             prevTime = Calendar.current.startOfDay(for: dayEval.date)
             
+        } //raw data are zero-paded.
+        
+        for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
+            yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
+            yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
+            aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] / Double(wdays)))
+            aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] / Double(wdays)))
+        } //Have to append to initialize the data.
+        
+        for aa in stride(from: 0, to: wdays - 1, by: 1) {
+            for bb in 0..<min(aa+1, days) {
+                aveVal[bb].y += rawVal[aa] / Double(wdays)
+                aveVal2[bb].y += rawVal2[aa] / Double(wdays)
+            }
         }
         
-        let dayNo = yVal.count
-        
-        var aveFinished = 0.0
-        var aveSpent = 0.0
-        
-        
-        for chartData in yVal {
-            aveSpent += chartData.y
-        }
-        for chartData in yVal2 {
-            aveFinished += chartData.y
+        for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
+            for bb in (aa-wdays+1+1)..<min(aa+1, days) {
+                aveVal[bb].y += rawVal[aa] / Double(wdays)
+                aveVal2[bb].y += rawVal2[aa] / Double(wdays)
+            }
+            
         }
         
-        aveSpent /= Double(dayNo)
-        aveFinished /= Double(dayNo)
+//        for chartData in yVal {
+//            aveSpent += chartData.y
+//        }
+//        for chartData in yVal2 {
+//            aveFinished += chartData.y
+//        }
         
-        var yAveSpent = [ChartDataEntry]()
-        yAveSpent.reserveCapacity(2)
-        yAveSpent.append(ChartDataEntry(x: 0, y: aveSpent))
-        yAveSpent.append(ChartDataEntry(x: Double(dayNo - 1), y: aveSpent))
-        var yAveFinished = [ChartDataEntry]()
-        yAveFinished.reserveCapacity(2)
-        yAveFinished.append(ChartDataEntry(x: 0, y: aveFinished))
-        yAveFinished.append(ChartDataEntry(x: Double(dayNo - 1), y: aveFinished))
+//        aveSpent /= Double(days)
+//        aveFinished /= Double(days)
+        
+//        var yAveSpent = [ChartDataEntry]()
+//        yAveSpent.reserveCapacity(2)
+//        yAveSpent.append(ChartDataEntry(x: 0, y: 0))
+//        yAveSpent.append(ChartDataEntry(x: Double(days - 1), y: 0))
+//        var yAveFinished = [ChartDataEntry]()
+//        yAveFinished.reserveCapacity(2)
+//        yAveFinished.append(ChartDataEntry(x: 0, y: 0))
+//        yAveFinished.append(ChartDataEntry(x: Double(days - 1), y: 0))
         
         
         let set1 = LineChartDataSet(entries: yVal2, label: "Finished")
@@ -268,11 +310,11 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         set2.setColor(.red)
         set2.setCircleColor(.red)
         
-        let set3 = LineChartDataSet(entries: yAveSpent, label: "Average Time Spent")
+        let set3 = LineChartDataSet(entries: aveVal, label: "Average Time Spent")
         set3.setColor(.red)
         set3.lineDashLengths = [5]
         set3.drawCirclesEnabled = false
-        let set4 = LineChartDataSet(entries: yAveFinished, label: "Average Finished")
+        let set4 = LineChartDataSet(entries: aveVal2, label: "Average Finished")
         set4.setColor(.blue)
         set4.lineDashLengths = [5]
         set4.drawCirclesEnabled = false
@@ -360,8 +402,9 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         // will delete records prior to predetermined date.
         
         let daysToPlot = Int(textFieldUp.text!) ?? 14
+        let window = Int(textFieldMid.text!) ?? 14
         
-        setData(days: daysToPlot)
+        setData(days: daysToPlot, wdays: window)
         
     }
     

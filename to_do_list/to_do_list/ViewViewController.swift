@@ -72,31 +72,31 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         
         let itemLabel = UILabel()
         itemLabel.text = item?.item
-        itemLabel.frame = CGRect(x: 0, y: 154, width: 407, height: 74)
+        itemLabel.frame = CGRect(x: 30, y: 120, width: 370, height: 108)
         itemLabel.lineBreakMode = .byWordWrapping
-        itemLabel.numberOfLines = 3
+        itemLabel.numberOfLines = 4
         scrollView.addSubview(itemLabel)
         
         dateLabel.text = Self.dateFormatter.string(from: item!.date)
-        BLabel.text = String(format: "%.1f hours", item!.budget)
+        BLabel.text = String(format: "%.2f hours", item!.budget)
         if item!.checkIn {
             TvBLabel.text = item!.budget > 0 ? String(format: "%.2f", (item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0) / item!.budget) : "0.0"
-            TLabel.text = String(format: "%.1f hours", item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0)
+            TLabel.text = String(format: "%.2f hours", item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0)
             
             ElapsedTimeLabel.text = timeFormatter.string(from: TimeInterval(-item!.startTime.timeIntervalSinceNow))
             // Updates at each second.
             timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(step), userInfo: nil, repeats: true)
         } else {
             TvBLabel.text = item!.budget > 0 ? String(format: "%.2f", item!.timeSpent / item!.budget) : "0.0"
-            TLabel.text = String(format: "%.1f hours", item!.timeSpent)
-            ElapsedTimeLabel.text = String(format: "%.1f hours", 0.0)
+            TLabel.text = String(format: "%.2f hours", item!.timeSpent)
+            ElapsedTimeLabel.text = String(format: "%.2f hours", 0.0)
             //print("Checked out")
         }
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(didTapDelete))
         
         let taskLabel = UILabel()
-        taskLabel.frame = CGRect(x: 0, y: 126, width: 40, height: 21)
+        taskLabel.frame = CGRect(x: 30, y: 126, width: 40, height: 21)
         taskLabel.textAlignment = .left
         taskLabel.text = "Task:"
         scrollView.addSubview(taskLabel)
@@ -183,7 +183,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         } else {
             // Careful! Putting this outside adds additional time to displayed time usage when checked out.
             TvBLabel.text = item!.budget > 0 ? String(format: "%.2f", (item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0) / item!.budget) : "0.0"
-            TLabel.text = String(format: "%.1f hours", item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0)
+            TLabel.text = String(format: "%.2f hours", item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0)
             
             ElapsedTimeLabel.text = timeFormatter.string(from: TimeInterval(-item!.startTime.timeIntervalSinceNow))
         }
@@ -250,50 +250,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         
         
     }
-    
-    // No need for designating a button for adding notifications.
-//    @objc private func didAddAlarm() {
-//        // Enable or disable features based on the authorization.
-//        if self.canNotify {
-//            DispatchQueue.main.async {
-//                let content = UNMutableNotificationContent()
-//                content.title = "To-Do List Alert"
-//                content.body = "Current task out of budgeted time."
-//                content.sound = UNNotificationSound.default
-//
-//                var secondsSinceCheckin = 0.0
-//                if self.item!.checkIn {
-//                    secondsSinceCheckin -= self.item!.startTime.timeIntervalSinceNow
-//                }
-//
-//
-//                let futureTime = (self.item!.budget - self.item!.timeSpent) * 3600.0 - secondsSinceCheckin
-//
-//                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: futureTime, repeats: false)
-//
-//                let request = UNNotificationRequest(identifier: self.item!.item,
-//                            content: content, trigger: trigger)
-//
-//                // Schedule the request with the system.
-//                self.center.add(request) { (error) in
-//                    if let error = error {
-//
-//                        // Handle any errors.
-//                        print("Error: ", error)
-//                    }
-//
-//                }
-//                let alert = UIAlertController(title: "Start Timer", message: "Will push a notification when out of budget.", preferredStyle: .alert)
-//
-//                alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: nil))
-//                self.present(alert, animated: true)
-//            }
-//
-//        }
-//
-//
-//    }
-        
     
     func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
         self.dismiss(animated: true, completion: nil)
@@ -409,13 +365,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         // Update view.
         viewDidLoad()
         
-        
-        //let alert = UIAlertController(title: "Checked in!", message: "Will push a notification when out of budget.", preferredStyle: .alert)
-        
-        //alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: nil))
-        
-        //self.present(alert, animated: true)
-        
     }
     
     @objc private func didAdjust() {
@@ -470,12 +419,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             }
             
             try! self.realm.commitWrite()
+            
+            // Update view.
+            self.viewDidLoad()
         }
         self.present(alert, animated: true)
         alert.addAction(confirmAction)
-        
-        deletionHandler?()
-        
         
     }
     
@@ -768,12 +717,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 myItem.timeSpent -= min(usedBudget, myItem.timeSpent) // time spent can only go to 0.
                 
                 try! self.realm.commitWrite()
+                // Update view.
+                self.viewDidLoad()
             }
             alert.addAction(confirmAction)
             
             self.present(alert, animated: true)
-            
-            deletionHandler?()
             
         }
         

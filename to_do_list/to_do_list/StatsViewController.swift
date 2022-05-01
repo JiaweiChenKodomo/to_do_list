@@ -261,6 +261,11 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             
         } //raw data are zero-paded.
         
+        if rawVal.count < days+wdays-1 {
+            rawVal.append(0.0)
+            rawVal2.append(0.0)
+        }
+        
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
             yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))

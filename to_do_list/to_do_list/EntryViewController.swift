@@ -20,6 +20,8 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     
     var textFieldBatchNo = UITextField()
     var textFieldStep = UITextField()
+    
+    var firstEdit = true
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -84,7 +86,10 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     
     func textFieldDidBeginEditing(_ textField: UITextField) {
         //print("Begin!")
-        textField.text = ""
+        if (firstEdit) {
+            textField.text = ""
+            firstEdit = false
+        }
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {

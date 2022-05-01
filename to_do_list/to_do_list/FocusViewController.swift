@@ -8,8 +8,10 @@
 
 import UIKit
 import SwiftUI
+import EventKit
+import EventKitUI
 
-class FocusViewController: UIViewController {
+class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollViewDelegate, UNUserNotificationCenterDelegate {
     
     //public var item: checkListItem?
     
@@ -18,6 +20,12 @@ class FocusViewController: UIViewController {
     public var startFocus: Date?
     
     public var checkInTime: Date?
+    
+    private let store =  EKEventStore()
+    
+    private let center = UNUserNotificationCenter.current()
+    
+    private var canNotify = true;
     
     var timer: Timer!
     
@@ -44,9 +52,53 @@ class FocusViewController: UIViewController {
         label.text = formattedString
         label2.text = formattedString2
         
+        self.navigationItem.hidesBackButton = true
+        let newBackButton = UIBarButtonItem(title: "Back", style: UIBarButtonItem.Style.plain, target: self, action: #selector(back))
+        self.navigationItem.leftBarButtonItem = newBackButton
+        
+        if self.canNotify {
+            DispatchQueue.main.async {
+                let content = UNMutableNotificationContent()
+                content.body = "Get up and take a rest!"
+                content.sound = UNNotificationSound.default
+                
+                let addedTime = 3000.0 // in seconds
+                
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: addedTime, repeats: false)
+                
+                let request = UNNotificationRequest(identifier: "Get up and take a rest!",
+                            content: content, trigger: trigger)
+
+                // Schedule the request with the system.
+                self.center.add(request) { (error) in
+                    if let error = error {
+                       
+                        // Handle any errors.
+                        print("Error: ", error)
+                    }
+                    
+                }
+                
+            }
+            
+        }
+        
         timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(step), userInfo: nil, repeats: true)
         
         
+    }
+    
+    @objc func back() {
+        // Perform your custom actions
+        if self.canNotify {
+            DispatchQueue.main.async {
+                
+                self.center.removePendingNotificationRequests(withIdentifiers: ["Get up and take a rest!"])
+                
+            }
+        }
+        // Go back to the previous ViewController
+        _ = navigationController?.popViewController(animated: true)
     }
     
     @objc func step() {
@@ -64,6 +116,18 @@ class FocusViewController: UIViewController {
         label2.text = formattedString2
     }
     
+    
+    func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
+        self.dismiss(animated: true, completion: nil)
+    }
+    
+    func center(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        completionHandler()
+    }
+
+    func center(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.sound, .badge])
+    }
 
     /*
     // MARK: - Navigation

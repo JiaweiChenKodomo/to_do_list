@@ -16,20 +16,38 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     
     public var deletionHandler: (() -> Void)?
     
-    
-    @IBOutlet var dateLabel: UILabel!
-    @IBOutlet var TvBLabel: UILabel!
-    @IBOutlet var TLabel: UILabel!
-    @IBOutlet var BLabel: UILabel!
-    @IBOutlet var ElapsedTimeLabel: UILabel!
-    
-    @IBOutlet var scrollView: UIScrollView!
+    private var scrollView: UIScrollView!
     
     private let store =  EKEventStore()
     
     private let center = UNUserNotificationCenter.current()
     
     private var canNotify = true;
+    
+    private let xOffSet = 10;
+    
+    private let TvBLabel = UILabel()
+    private let TLabel = UILabel()
+    private let ElapsedTimeLabel = UILabel()
+    
+    private let itemLabel = UILabel()
+    private let dateLabel = UILabel()
+    private let BLabel = UILabel()
+    private let taskLabel = UILabel()
+    private let deadlineLabel = UILabel()
+    private let BGTLabel = UILabel()
+    private let IPTLabel = UILabel()
+    private let IPTBGTLabel = UILabel()
+    private let TFCLabel = UILabel()
+    
+    private let checkInBut = UIButton(type: .system)
+    private let checkTimeBut = UIButton(type: .system)
+    private let checkOutBut = UIButton(type: .system)
+    private let finishBut = UIButton(type: .system)
+    private let partialFinishBut = UIButton(type: .system)
+    private let modBut = UIButton(type: .system)
+    private let addCalBut = UIButton(type: .system)
+    private let focusBut = UIButton(type: .system)
     
     var timer: Timer!
     
@@ -70,12 +88,26 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         //scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
-        let itemLabel = UILabel()
         itemLabel.text = item?.item
-        itemLabel.frame = CGRect(x: 30, y: 120, width: 370, height: 108)
+        itemLabel.frame = CGRect(x: 30+xOffSet, y: 120, width: 360-xOffSet*2, height: 108)
         itemLabel.lineBreakMode = .byWordWrapping
         itemLabel.numberOfLines = 4
         scrollView.addSubview(itemLabel)
+        
+        dateLabel.frame = CGRect(x: 106+xOffSet, y: 236, width: 334-xOffSet*2, height: 21)
+        scrollView.addSubview(dateLabel)
+        
+        TvBLabel.frame = CGRect(x: 137+xOffSet, y: 323, width: 286-xOffSet*2, height: 21)
+        scrollView.addSubview(TvBLabel)
+        
+        TLabel.frame = CGRect(x: 78+xOffSet, y: 294, width: 351-xOffSet*2, height: 21)
+        scrollView.addSubview(TLabel)
+        
+        BLabel.frame = CGRect(x: 95+xOffSet, y: 265, width: 339-xOffSet*2, height: 21)
+        scrollView.addSubview(BLabel)
+        
+        ElapsedTimeLabel.frame = CGRect(x: 190+xOffSet, y: 352, width: 152-xOffSet*2, height: 21)
+        scrollView.addSubview(ElapsedTimeLabel)
         
         dateLabel.text = Self.dateFormatter.string(from: item!.date)
         BLabel.text = String(format: "%.2f hours", item!.budget)
@@ -95,13 +127,36 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(didTapDelete))
         
-        let taskLabel = UILabel()
-        taskLabel.frame = CGRect(x: 30, y: 126, width: 40, height: 21)
+        taskLabel.frame = CGRect(x: 30+xOffSet, y: 126, width: 40, height: 21)
         taskLabel.textAlignment = .left
         taskLabel.text = "Task:"
         scrollView.addSubview(taskLabel)
         
-        let checkInBut = UIButton(type: .system)
+        deadlineLabel.frame = CGRect(x: 30+xOffSet, y: 236, width: 76, height: 21)
+        deadlineLabel.textAlignment = .left
+        deadlineLabel.text = "Deadline:"
+        scrollView.addSubview(deadlineLabel)
+        
+        BGTLabel.frame = CGRect(x: 30+xOffSet, y: 265, width: 65, height: 21)
+        BGTLabel.textAlignment = .left
+        BGTLabel.text = "Budget:"
+        scrollView.addSubview(BGTLabel)
+        
+        IPTLabel.frame = CGRect(x: 30+xOffSet, y: 294, width: 48, height: 21)
+        IPTLabel.textAlignment = .left
+        IPTLabel.text = "Input:"
+        scrollView.addSubview(IPTLabel)
+        
+        IPTBGTLabel.frame = CGRect(x: 30+xOffSet, y: 323, width: 107, height: 21)
+        IPTBGTLabel.textAlignment = .left
+        IPTBGTLabel.text = "Input/Budget:"
+        scrollView.addSubview(IPTBGTLabel)
+        
+        TFCLabel.frame = CGRect(x: 30+xOffSet, y: 352, width: 160, height: 21)
+        TFCLabel.textAlignment = .left
+        TFCLabel.text = "Time from Check-in:"
+        scrollView.addSubview(TFCLabel)
+        
         checkInBut.frame = CGRect(x: 15, y: 400, width: 100, height: 50)
         checkInBut.setTitle("Check-in", for: .normal)
         checkInBut.layer.borderWidth = 1.0
@@ -110,7 +165,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(checkInBut)
         scrollView.addSubview(checkInBut)
         
-        let checkTimeBut = UIButton(type: .system)
         checkTimeBut.frame = CGRect(x: 255, y: 400, width: 100, height: 50)
         checkTimeBut.setTitle("Adjust Time", for: .normal)
         checkTimeBut.layer.borderWidth = 1.0
@@ -119,8 +173,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(checkTimeBut)
         scrollView.addSubview(checkTimeBut)
         
-        
-        let checkOutBut = UIButton(type: .system)
         checkOutBut.frame = CGRect(x: 135, y: 400, width: 100, height: 50)
         checkOutBut.setTitle("Check-out", for: .normal)
         checkOutBut.layer.borderWidth = 1.0
@@ -129,7 +181,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(checkOutBut)
         scrollView.addSubview(checkOutBut)
         
-        let finishBut = UIButton(type: .system)
         finishBut.frame = CGRect(x: 15, y: 500, width: 100, height: 50)
         finishBut.setTitle("Finish", for: .normal)
         finishBut.layer.borderWidth = 1.0
@@ -138,7 +189,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(finishBut)
         scrollView.addSubview(finishBut)
         
-        let partialFinishBut = UIButton(type: .system)
         partialFinishBut.frame = CGRect(x: 135, y: 500, width: 130, height: 50)
         partialFinishBut.setTitle("Log Completion", for: .normal)
         partialFinishBut.layer.borderWidth = 1.0
@@ -147,7 +197,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(partialFinishBut)
         scrollView.addSubview(partialFinishBut)
         
-        let modBut = UIButton(type: .system)
         modBut.frame = CGRect(x: 285, y: 500, width: 70, height: 50)
         modBut.setTitle("Modify", for: .normal)
         modBut.layer.borderWidth = 1.0
@@ -156,7 +205,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(modBut)
         scrollView.addSubview(modBut)
         
-        let addCalBut = UIButton(type: .system)
         addCalBut.frame = CGRect(x: 15, y: 600, width: 130, height: 50)
         addCalBut.setTitle("Add to Calendar", for: .normal)
         addCalBut.layer.borderWidth = 1.0
@@ -165,7 +213,6 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(addCalBut)
         scrollView.addSubview(addCalBut)
         
-        let focusBut = UIButton(type: .system)
         focusBut.frame = CGRect(x: 165, y: 600, width: 190, height: 50)
         focusBut.setTitle("Focus Mode", for: .normal)
         focusBut.layer.borderWidth = 1.0

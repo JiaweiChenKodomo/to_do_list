@@ -407,7 +407,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         // will delete records prior to predetermined date.
         
         let daysToPlot = Int(textFieldUp.text!) ?? 14
-        let window = Int(textFieldMid.text!) ?? 14
+        let window = Int(textFieldMid.text!) ?? 7
         
         setData(days: daysToPlot, wdays: window)
         

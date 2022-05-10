@@ -687,7 +687,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             }
             
             //alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-            let confirmAction = UIAlertAction(title: "OK", style: .default) {
+            let confirmAction = UIAlertAction(title: "Log w/o finish", style: .default) {
                 [self, weak alert] _ in
                 guard let alertController = alert, let textField = alertController.textFields?.first else { return }
                 
@@ -767,7 +767,91 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 // Update view.
                 self.viewDidLoad()
             }
+            
+            let confirmAction2 = UIAlertAction(title: "Log & finish", style: .default) {
+                [self, weak alert] _ in
+                guard let alertController = alert, let textField = alertController.textFields?.first else { return }
+                
+                //print("Current password \(String(describing: textField.text))")
+                
+                ratio = Double(textField.text!) ?? 0.0
+                
+                //print(ratio)
+                                
+                if (myItem.checkIn) {
+                    
+                    let yesterdayStart = Calendar.current.startOfDay(for: myItem.startTime)
+                    let yesterdayEnd: Date = {
+                        let components = DateComponents(day: 1, second: -1)
+                        return Calendar.current.date(byAdding: components, to: yesterdayStart)!
+                      }()
+                    
+                    if yesterdayEnd.timeIntervalSinceNow < 0 {
+                        // yesterdayEnd is earlier than now. Spaning two days. Ignore problem with multiple days: that is usually not possible.
+                        
+                        let elapsedTime = -myItem.startTime.timeIntervalSince(yesterdayEnd) / 3600.0
+                        myItem.timeSpent += elapsedTime;
+                        
+                        let dayEval2 = self.realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", yesterdayStart, yesterdayEnd)
+                        
+                        if (dayEval2.first == nil) {
+                            //print("initializing record")
+                            let newDayEval = dailyPerfEval()
+                            newDayEval.tot_time += elapsedTime
+                            newDayEval.date = myItem.startTime
+                            self.realm.add(newDayEval)
+                        } else {
+                            //print("original record %f", dayEval.first?.tot_time)
+                            dayEval2.first?.tot_time += elapsedTime
+                        }
+                        // Change startTime to today
+                        myItem.startTime = todayStart
+                    }
+                    
+                    let elapsedTime = -myItem.startTime.timeIntervalSinceNow / 3600.0
+                    
+                    myItem.timeSpent += elapsedTime;
+                    myItem.checkIn = false
+                    
+                    if (dayEval.first == nil) {
+                        //print("initializing record")
+                        let newDayEval = dailyPerfEval()
+                        newDayEval.tot_time += elapsedTime
+                        newDayEval.tot_finish += myItem.budget * ratio
+                        self.realm.add(newDayEval)
+                    } else {
+                        //print("original record %f", dayEval.first?.tot_time)
+                        dayEval.first?.tot_time += elapsedTime
+                        dayEval.first?.tot_finish += myItem.budget * ratio
+                    }
+                    
+                    // Remove associated notifications on check-out
+                    if self.canNotify {
+                        DispatchQueue.main.async {
+                            
+                            self.center.removePendingNotificationRequests(withIdentifiers: [myItem.item])
+                            
+                        }
+                    }
+                    
+                } else {
+                    
+                    dayEval.first?.tot_finish += myItem.budget * ratio
+                }
+                
+                // Subtract used budget from both the time spent and the budget to reflect the left over task load.
+                let usedBudget = ratio * myItem.budget
+                myItem.budget -= min(usedBudget, myItem.budget) // budget can only go to 0.
+                myItem.timeSpent -= min(usedBudget, myItem.timeSpent) // time spent can only go to 0.
+                myItem.finished = true
+                
+                try! self.realm.commitWrite()
+                // Update view.
+                self.viewDidLoad()
+            }
+            
             alert.addAction(confirmAction)
+            alert.addAction(confirmAction2)
             
             self.present(alert, animated: true)
             

@@ -12,6 +12,8 @@ import TinyConstraints
 
 import RealmSwift
 
+import SpriteKit
+
 class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     
     var textField = UITextField()
@@ -22,7 +24,12 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     
     var days = 14
     
-    var wdays = 14
+    var wdays = 7
+    
+    let emitterNode = SKEmitterNode(fileNamed: "snow1.sks")!
+    
+    var animationLoaded = false
+    var addAnimation = false
     
     private let realm = try! Realm()
     
@@ -55,6 +62,19 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
     }()
     
+    private func addSnow() {
+        let skView = SKView(frame: view.frame)
+        skView.backgroundColor = .clear
+        let scene = SKScene(size: view.frame.size)
+        scene.backgroundColor = .clear
+        skView.presentScene(scene)
+        skView.isUserInteractionEnabled = false
+        scene.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        scene.addChild(emitterNode)
+        emitterNode.position.y = scene.frame.maxY
+        emitterNode.particlePositionRange.dx = scene.frame.width
+        scrollView.addSubview(skView)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -79,7 +99,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         lineChart.heightToWidth(of: view)
         
         let claerBut = UIButton(type: .system)
-        claerBut.frame = CGRect(x: 255, y: 700, width: 100, height: 50)
+        claerBut.frame = CGRect(x: 255, y: 720, width: 100, height: 50)
         claerBut.setTitle("Delete", for: .normal)
         claerBut.layer.borderWidth = 1.0
         claerBut.layer.borderColor = UIColor.blue.cgColor
@@ -88,7 +108,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         scrollView.addSubview(claerBut)
         
         let plotBut = UIButton(type: .system)
-        plotBut.frame = CGRect(x: 255, y: 600, width: 100, height: 50)
+        plotBut.frame = CGRect(x: 255, y: 630, width: 100, height: 50)
         plotBut.setTitle("Plot", for: .normal)
         plotBut.layer.borderWidth = 1.0
         plotBut.layer.borderColor = UIColor.blue.cgColor
@@ -116,6 +136,12 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         textFieldMid.text = "Put window size"
         //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldMid)
+        
+        // Add animation based on performance
+        if (addAnimation && !animationLoaded) {
+            addSnow()
+            animationLoaded = true
+        }
         
         
         // Set zooming behavior
@@ -287,26 +313,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             }
             
         }
-        
-//        for chartData in yVal {
-//            aveSpent += chartData.y
-//        }
-//        for chartData in yVal2 {
-//            aveFinished += chartData.y
-//        }
-        
-//        aveSpent /= Double(days)
-//        aveFinished /= Double(days)
-        
-//        var yAveSpent = [ChartDataEntry]()
-//        yAveSpent.reserveCapacity(2)
-//        yAveSpent.append(ChartDataEntry(x: 0, y: 0))
-//        yAveSpent.append(ChartDataEntry(x: Double(days - 1), y: 0))
-//        var yAveFinished = [ChartDataEntry]()
-//        yAveFinished.reserveCapacity(2)
-//        yAveFinished.append(ChartDataEntry(x: 0, y: 0))
-//        yAveFinished.append(ChartDataEntry(x: Double(days - 1), y: 0))
-        
+              
         
         let set1 = LineChartDataSet(entries: yVal2, label: "Finished")
         set1.setColor(.blue)
@@ -324,7 +331,9 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         set4.lineDashLengths = [5]
         set4.drawCirclesEnabled = false
         
-        
+        if (yVal.last!.y > aveVal.last!.y && !animationLoaded) {
+            addAnimation = true
+        }
         
         let data = LineChartData(dataSets: [set1, set2, set3, set4])
         
@@ -376,7 +385,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     @objc private func didTapClear() {
         // will delete records prior to predetermined date.
         
-        let daysToKeep = Int(textField.text!) ?? 14
+        let daysToKeep = Int(textField.text!) ?? 140
         
         // day interval
         let todayStart = Calendar.current.startOfDay(for: Date())

@@ -320,13 +320,19 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         if item!.checkIn {
             didCheckOut()
         }
-
-        realm.beginWrite()
-        realm.delete(myItem)
-        try! realm.commitWrite()
-
-        deletionHandler?()
-        navigationController?.popToRootViewController(animated: true)
+        
+        let alert = UIAlertController(title: "Delete this task?", message: "", preferredStyle: .alert)
+        
+        alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: {(action: UIAlertAction!) in
+            self.realm.beginWrite()
+            self.realm.delete(myItem)
+            try! self.realm.commitWrite()
+            self.deletionHandler?()
+            self.navigationController?.popToRootViewController(animated: true)
+        }))
+        alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: nil))
+        
+        self.present(alert, animated: true)
     }
     
     @objc private func didCheckIn() {

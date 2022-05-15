@@ -10,6 +10,7 @@ import UIKit
 import SwiftUI
 import EventKit
 import EventKitUI
+import SpriteKit
 
 class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollViewDelegate, UNUserNotificationCenterDelegate {
     
@@ -25,7 +26,13 @@ class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollVi
     
     private let center = UNUserNotificationCenter.current()
     
+    let emitterNode = SKEmitterNode(fileNamed: "snow1.sks")!
+    
     private var canNotify = true;
+    
+    public var addedTime = 1800.0 // in seconds
+    
+    private var animationPlayed = false
     
     var timer: Timer!
     
@@ -57,14 +64,14 @@ class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollVi
         self.navigationItem.leftBarButtonItem = newBackButton
         
         if self.canNotify {
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [self] in
                 let content = UNMutableNotificationContent()
                 content.body = "Get up and take a rest!"
                 content.sound = UNNotificationSound.default
                 
-                let addedTime = 3000.0 // in seconds
+                //let addedTime = 3000.0 // in seconds
                 
-                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: addedTime, repeats: false)
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: self.addedTime, repeats: false)
                 
                 let request = UNNotificationRequest(identifier: "Get up and take a rest!",
                             content: content, trigger: trigger)
@@ -86,6 +93,20 @@ class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollVi
         timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(step), userInfo: nil, repeats: true)
         
         
+    }
+    
+    private func addSnow() {
+        let skView = SKView(frame: view.frame)
+        skView.backgroundColor = .clear
+        let scene = SKScene(size: view.frame.size)
+        scene.backgroundColor = .clear
+        skView.presentScene(scene)
+        skView.isUserInteractionEnabled = false
+        scene.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        scene.addChild(emitterNode)
+        emitterNode.position.y = scene.frame.maxY
+        emitterNode.particlePositionRange.dx = scene.frame.width
+        view.addSubview(skView)
     }
     
     @objc func back() {
@@ -114,6 +135,11 @@ class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollVi
         
         label.text = formattedString
         label2.text = formattedString2
+        
+        if (!animationPlayed && time_elapsed >= addedTime) {
+            addSnow()
+            animationPlayed = true
+        }
     }
     
     

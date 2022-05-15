@@ -247,17 +247,42 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             // Check in first if not already.
             didCheckIn()
         }
-        // Jump to Focus view
-        guard let vc = storyboard?.instantiateViewController(withIdentifier: "focus") as? FocusViewController else {
-            return
+        
+        let alert = UIAlertController(title: "Target focus period?", message: "How long do you want to stay focused in minutes?", preferredStyle: .alert)
+        
+        alert.addTextField{ textField in
+            textField.placeholder = "30.0"
         }
-        //vc.item = item
-        vc.title = "Focus View"
-        vc.startFocus = Date()
-        vc.checkInTime = item?.startTime
-        vc.navigationItem.largeTitleDisplayMode = .never
-        vc.completionHandler = deletionHandler
-        navigationController?.pushViewController(vc, animated: true)
+        
+        var addedMinute = 0.0
+        
+        let confirmAction = UIAlertAction(title: "OK", style: .default) {
+            [weak alert] _ in
+            guard let alertController = alert, let textField = alertController.textFields?.first else { return }
+            
+            //print("Current password \(String(describing: textField.text))")
+            
+            addedMinute = Double(textField.text!) ?? 30.0
+            
+            // Jump to Focus view
+            guard let vc = self.storyboard?.instantiateViewController(withIdentifier: "focus") as? FocusViewController else {
+                return
+            }
+            //vc.item = item
+            vc.title = "Focus View"
+            vc.startFocus = Date()
+            vc.checkInTime = self.item?.startTime
+            vc.navigationItem.largeTitleDisplayMode = .never
+            vc.completionHandler = self.deletionHandler
+            vc.addedTime = addedMinute * 60.0
+            self.navigationController?.pushViewController(vc, animated: true)
+            
+        }
+        self.present(alert, animated: true)
+        alert.addAction(confirmAction)
+        
+        
+        
     }
     
     @objc private func didTapMod() {
@@ -282,7 +307,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     let newEvent = EKEvent(eventStore: store)
                     newEvent.title = self.item?.item
                     newEvent.startDate = self.item?.date
-                    newEvent.endDate = self.item?.date
+                    newEvent.endDate = self.item?.date.addingTimeInterval((self.item?.budget ?? 0.0) * 3600)
                     
                     let vc = EKEventEditViewController()
                     vc.eventStore = store

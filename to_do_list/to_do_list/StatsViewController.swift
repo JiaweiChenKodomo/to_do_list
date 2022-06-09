@@ -10,6 +10,8 @@ import UIKit
 import Charts
 import TinyConstraints
 
+import Foundation
+
 import RealmSwift
 
 import SpriteKit
@@ -260,6 +262,25 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         var aveVal2 = [ChartDataEntry]()
         aveVal2.reserveCapacity(days)
         
+        var weights = [Double]()
+        var sumWeight = 0.0
+        weights.reserveCapacity(wdays)
+        
+        if (wdays == 1) {
+            weights.append(1.0)
+        } else {
+            for aa in stride(from: 0, to: wdays, by: 1) {
+                let a = 4.0 / (Double(wdays) - 1.0)
+                let z = a * Double(aa) - 2.0
+                weights.append(1.0 / (1.0 + exp(-z)))
+                sumWeight += 1.0 / (1.0 + exp(-z))
+            }
+            
+            for aa in stride(from: 0, to: wdays, by: 1) {
+                weights[aa] /= sumWeight
+            }
+        }
+        
         var aa = 0.0
         var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
 //        print("##########")
@@ -272,6 +293,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
                 // add n zero days where n is the no. of difference in days.
                 var bb = 1 // Start with 1, because, e.g., records are on 11 and 14, then only need to pad 2.
                 while bb < diffTime.day! {
+                    //print(diffTime.day!)
                     rawVal.append(0.0)
                     rawVal2.append(0.0)
                     aa += 1.0
@@ -286,8 +308,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             prevTime = Calendar.current.startOfDay(for: dayEval.date)
             
         } //raw data are zero-paded.
-        
-        if rawVal.count < days+wdays-1 {
+        // The above step is not working for zeros at the end. So add zeros at the end.
+        while rawVal.count < days+wdays-1 {
             rawVal.append(0.0)
             rawVal2.append(0.0)
         }
@@ -295,21 +317,21 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
             yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
-            aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] / Double(wdays)))
-            aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] / Double(wdays)))
+            aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights.last!))
+            aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights.last!))
         } //Have to append to initialize the data.
         
+        //print(weights)
         for aa in stride(from: 0, to: wdays - 1, by: 1) {
             for bb in 0..<min(aa+1, days) {
-                aveVal[bb].y += rawVal[aa] / Double(wdays)
-                aveVal2[bb].y += rawVal2[aa] / Double(wdays)
+                aveVal[bb].y += rawVal[aa] * weights[aa - bb]
+                aveVal2[bb].y += rawVal2[aa] * weights[aa - bb]
             }
         }
-        
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             for bb in (aa-wdays+1+1)..<min(aa+1, days) {
-                aveVal[bb].y += rawVal[aa] / Double(wdays)
-                aveVal2[bb].y += rawVal2[aa] / Double(wdays)
+                aveVal[bb].y += rawVal[aa] * weights[aa - bb]
+                aveVal2[bb].y += rawVal2[aa] * weights[aa - bb]
             }
             
         }
@@ -331,7 +353,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         set4.lineDashLengths = [5]
         set4.drawCirclesEnabled = false
         
-        if (yVal.last!.y > aveVal.last!.y && !animationLoaded) {
+        if ((yVal.last!.y > aveVal.last!.y || (yVal2.last!.y > aveVal2.last!.y)) && !animationLoaded) {
             addAnimation = true
         }
         
@@ -366,13 +388,11 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
 //        newDayEval.tot_finish = 4
 //        newDayEval.date = yesterday
 //        realm.add(newDayEval)
-//
 //        let newDayEval2 = dailyPerfEval()
 //        newDayEval2.tot_time = 10
 //        newDayEval2.tot_finish = 4
 //        newDayEval2.date = dayBeforeYesterday
 //        realm.add(newDayEval2)
-//
 //        let newDayEval3 = dailyPerfEval()
 //        newDayEval3.tot_time = 10
 //        newDayEval3.tot_finish = 4

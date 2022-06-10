@@ -25,10 +25,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     private var canNotify = true;
     
     private let xOffSet = 10;
+    private let yOffSet = 50;
     
     private let TvBLabel = UILabel()
     private let TLabel = UILabel()
     private let ElapsedTimeLabel = UILabel()
+    private let lastCheckInTimeLabel = UILabel()
     
     private let itemLabel = UILabel()
     private let dateLabel = UILabel()
@@ -39,6 +41,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     private let IPTLabel = UILabel()
     private let IPTBGTLabel = UILabel()
     private let TFCLabel = UILabel()
+    private let TFCOLabel = UILabel()
     
     private let checkInBut = UIButton(type: .system)
     private let checkTimeBut = UIButton(type: .system)
@@ -89,27 +92,34 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
         itemLabel.text = item?.item
-        itemLabel.frame = CGRect(x: 30+xOffSet, y: 120, width: 360-xOffSet*2, height: 108)
+        let textHeight = ((itemLabel.text?.count ?? 0) / 37 + 1) * 21
+        let deltaY = 21
+        
+        itemLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY, width: 360-xOffSet*2, height: textHeight)
         itemLabel.lineBreakMode = .byWordWrapping
         itemLabel.numberOfLines = 4
         scrollView.addSubview(itemLabel)
         
-        dateLabel.frame = CGRect(x: 106+xOffSet, y: 236, width: 334-xOffSet*2, height: 21)
+        dateLabel.frame = CGRect(x: 106+xOffSet, y: yOffSet + deltaY*2 + textHeight, width: 334-xOffSet*2, height: 21)
         scrollView.addSubview(dateLabel)
         
-        TvBLabel.frame = CGRect(x: 137+xOffSet, y: 323, width: 286-xOffSet*2, height: 21)
+        TvBLabel.frame = CGRect(x: 137+xOffSet, y: yOffSet + deltaY*5 + textHeight, width: 286-xOffSet*2, height: 21)
         scrollView.addSubview(TvBLabel)
         
-        TLabel.frame = CGRect(x: 78+xOffSet, y: 294, width: 351-xOffSet*2, height: 21)
+        TLabel.frame = CGRect(x: 78+xOffSet, y: yOffSet + deltaY*4 + textHeight, width: 351-xOffSet*2, height: 21)
         scrollView.addSubview(TLabel)
         
-        BLabel.frame = CGRect(x: 95+xOffSet, y: 265, width: 339-xOffSet*2, height: 21)
+        BLabel.frame = CGRect(x: 95+xOffSet, y: yOffSet + deltaY*3 + textHeight, width: 339-xOffSet*2, height: 21)
         scrollView.addSubview(BLabel)
         
-        ElapsedTimeLabel.frame = CGRect(x: 190+xOffSet, y: 352, width: 152-xOffSet*2, height: 21)
+        ElapsedTimeLabel.frame = CGRect(x: 190+xOffSet, y: yOffSet + deltaY*6 + textHeight, width: 152-xOffSet*2, height: 21)
         scrollView.addSubview(ElapsedTimeLabel)
         
+        lastCheckInTimeLabel.frame = CGRect(x: 190+xOffSet, y: yOffSet + deltaY*7 + textHeight, width: 152-xOffSet*2, height: 21)
+        scrollView.addSubview(lastCheckInTimeLabel)
+        
         dateLabel.text = Self.dateFormatter.string(from: item!.date)
+        lastCheckInTimeLabel.text = Self.dateFormatter.string(from: item!.startTime)
         BLabel.text = String(format: "%.2f hours", item!.budget)
         if item!.checkIn {
             TvBLabel.text = item!.budget > 0 ? String(format: "%.2f", (item!.timeSpent - item!.startTime.timeIntervalSinceNow / 3600.0) / item!.budget) : "0.0"
@@ -127,37 +137,42 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(didTapDelete))
         
-        taskLabel.frame = CGRect(x: 30+xOffSet, y: 126, width: 40, height: 21)
+        taskLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet, width: 40, height: 21)
         taskLabel.textAlignment = .left
         taskLabel.text = "Task:"
         scrollView.addSubview(taskLabel)
         
-        deadlineLabel.frame = CGRect(x: 30+xOffSet, y: 236, width: 76, height: 21)
+        deadlineLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY*2 + textHeight, width: 76, height: 21)
         deadlineLabel.textAlignment = .left
         deadlineLabel.text = "Deadline:"
         scrollView.addSubview(deadlineLabel)
         
-        BGTLabel.frame = CGRect(x: 30+xOffSet, y: 265, width: 65, height: 21)
+        BGTLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY*3 + textHeight, width: 65, height: 21)
         BGTLabel.textAlignment = .left
         BGTLabel.text = "Budget:"
         scrollView.addSubview(BGTLabel)
         
-        IPTLabel.frame = CGRect(x: 30+xOffSet, y: 294, width: 48, height: 21)
+        IPTLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY*4 + textHeight, width: 48, height: 21)
         IPTLabel.textAlignment = .left
         IPTLabel.text = "Input:"
         scrollView.addSubview(IPTLabel)
         
-        IPTBGTLabel.frame = CGRect(x: 30+xOffSet, y: 323, width: 107, height: 21)
+        IPTBGTLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY*5 + textHeight, width: 107, height: 21)
         IPTBGTLabel.textAlignment = .left
         IPTBGTLabel.text = "Input/Budget:"
         scrollView.addSubview(IPTBGTLabel)
         
-        TFCLabel.frame = CGRect(x: 30+xOffSet, y: 352, width: 160, height: 21)
+        TFCLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY*6 + textHeight, width: 160, height: 21)
         TFCLabel.textAlignment = .left
         TFCLabel.text = "Time from Check-in:"
         scrollView.addSubview(TFCLabel)
         
-        checkInBut.frame = CGRect(x: 15, y: 400, width: 100, height: 50)
+        TFCOLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY*7 + textHeight, width: 160, height: 21)
+        TFCOLabel.textAlignment = .left
+        TFCOLabel.text = "Last Checked Time:"
+        scrollView.addSubview(TFCOLabel)
+        
+        checkInBut.frame = CGRect(x: 15, y: yOffSet + deltaY*7 + textHeight + 50, width: 100, height: 50)
         checkInBut.setTitle("Check-in", for: .normal)
         checkInBut.layer.borderWidth = 1.0
         checkInBut.layer.borderColor = UIColor.blue.cgColor
@@ -165,7 +180,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(checkInBut)
         scrollView.addSubview(checkInBut)
         
-        checkTimeBut.frame = CGRect(x: 255, y: 400, width: 100, height: 50)
+        checkTimeBut.frame = CGRect(x: 255, y: yOffSet + deltaY*7 + textHeight + 50, width: 100, height: 50)
         checkTimeBut.setTitle("Adjust Time", for: .normal)
         checkTimeBut.layer.borderWidth = 1.0
         checkTimeBut.layer.borderColor = UIColor.blue.cgColor
@@ -173,7 +188,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(checkTimeBut)
         scrollView.addSubview(checkTimeBut)
         
-        checkOutBut.frame = CGRect(x: 135, y: 400, width: 100, height: 50)
+        checkOutBut.frame = CGRect(x: 135, y: yOffSet + deltaY*7 + textHeight + 50, width: 100, height: 50)
         checkOutBut.setTitle("Check-out", for: .normal)
         checkOutBut.layer.borderWidth = 1.0
         checkOutBut.layer.borderColor = UIColor.blue.cgColor
@@ -181,7 +196,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(checkOutBut)
         scrollView.addSubview(checkOutBut)
         
-        finishBut.frame = CGRect(x: 15, y: 500, width: 100, height: 50)
+        finishBut.frame = CGRect(x: 15, y: yOffSet + deltaY*7 + textHeight + 150, width: 100, height: 50)
         finishBut.setTitle("Finish", for: .normal)
         finishBut.layer.borderWidth = 1.0
         finishBut.layer.borderColor = UIColor.blue.cgColor
@@ -189,7 +204,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(finishBut)
         scrollView.addSubview(finishBut)
         
-        partialFinishBut.frame = CGRect(x: 135, y: 500, width: 130, height: 50)
+        partialFinishBut.frame = CGRect(x: 135, y: yOffSet + deltaY*7 + textHeight + 150, width: 130, height: 50)
         partialFinishBut.setTitle("Log Completion", for: .normal)
         partialFinishBut.layer.borderWidth = 1.0
         partialFinishBut.layer.borderColor = UIColor.blue.cgColor
@@ -197,7 +212,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(partialFinishBut)
         scrollView.addSubview(partialFinishBut)
         
-        modBut.frame = CGRect(x: 285, y: 500, width: 70, height: 50)
+        modBut.frame = CGRect(x: 285, y: yOffSet + deltaY*7 + textHeight + 150, width: 70, height: 50)
         modBut.setTitle("Modify", for: .normal)
         modBut.layer.borderWidth = 1.0
         modBut.layer.borderColor = UIColor.blue.cgColor
@@ -205,7 +220,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(modBut)
         scrollView.addSubview(modBut)
         
-        addCalBut.frame = CGRect(x: 15, y: 600, width: 130, height: 50)
+        addCalBut.frame = CGRect(x: 15, y: yOffSet + deltaY*7 + textHeight + 250, width: 130, height: 50)
         addCalBut.setTitle("Add to Calendar", for: .normal)
         addCalBut.layer.borderWidth = 1.0
         addCalBut.layer.borderColor = UIColor.blue.cgColor
@@ -213,7 +228,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(addCalBut)
         scrollView.addSubview(addCalBut)
         
-        focusBut.frame = CGRect(x: 165, y: 600, width: 190, height: 50)
+        focusBut.frame = CGRect(x: 165, y: yOffSet + deltaY*7 + textHeight + 250, width: 190, height: 50)
         focusBut.setTitle("Focus Mode", for: .normal)
         focusBut.layer.borderWidth = 1.0
         focusBut.layer.borderColor = UIColor.blue.cgColor
@@ -568,6 +583,8 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 dayEval.first?.tot_time += elapsedTime
             }
             
+            myItem.startTime = Date()
+            
             try! realm.commitWrite()
             
             deletionHandler?()
@@ -674,6 +691,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 dayEval.first?.tot_finish += myItem.budget
                 //print(dayEval.first?.tot_finish)
             }
+            myItem.startTime = Date()
             
             try! realm.commitWrite()
             
@@ -793,7 +811,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 let usedBudget = ratio * myItem.budget
                 myItem.budget -= min(usedBudget, myItem.budget) // budget can only go to 0.
                 myItem.timeSpent -= min(usedBudget, myItem.timeSpent) // time spent can only go to 0.
-                
+                myItem.startTime = Date()
                 try! self.realm.commitWrite()
                 // Update view.
                 self.viewDidLoad()
@@ -875,7 +893,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 myItem.budget -= min(usedBudget, myItem.budget) // budget can only go to 0.
                 myItem.timeSpent -= min(usedBudget, myItem.timeSpent) // time spent can only go to 0.
                 myItem.finished = true
-                
+                myItem.startTime = Date()
                 try! self.realm.commitWrite()
                 // Update view.
                 self.viewDidLoad()

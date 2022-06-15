@@ -25,7 +25,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     private var canNotify = true;
     
     private let xOffSet = 10;
-    private let yOffSet = 50;
+    private let yOffSet = 120;
     
     private let TvBLabel = UILabel()
     private let TLabel = UILabel()
@@ -499,16 +499,66 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             addedHour = Double(textField.text!) ?? 0.0
             
             myItem.timeSpent += addedHour;
-            
-            if (dayEval.first == nil) {
-                //print("initializing record")
-                let newDayEval = dailyPerfEval()
-                newDayEval.tot_time += addedHour
-                newDayEval.date = Date() // set initial data on today.
-                self.realm.add(newDayEval)
+            if addedHour < 0 {
+                if (dayEval.first == nil) {
+                    //reduces time of the previous days
+                    var thisDayStart = Calendar.current.startOfDay(for: Date())
+                    while addedHour < 0 {
+                        let previousDayStart: Date = {
+                            let components = DateComponents(day: -1)
+                            return Calendar.current.date(byAdding: components, to: thisDayStart)!
+                          }()
+                        let previousDayEnd: Date = {
+                            let components = DateComponents(second: -1)
+                            return Calendar.current.date(byAdding: components, to: thisDayStart)!
+                          }()
+                        let prevDayEval = self.realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", previousDayStart, previousDayEnd)
+                        if (prevDayEval.first != nil) {
+                            let newAddedHour = addedHour + prevDayEval.first!.tot_time
+                            prevDayEval.first?.tot_time = max(0.0, newAddedHour)
+                            addedHour = newAddedHour
+                        }
+                        thisDayStart = previousDayStart
+                    }
+                    
+                } else {
+                    print("original record %f", dayEval.first?.tot_time)
+                    let newAddedHour = addedHour + dayEval.first!.tot_time
+                    print("new record %f", newAddedHour)
+                    dayEval.first?.tot_time = max(0.0, newAddedHour)
+                    addedHour = newAddedHour
+                    print("addded hour now %f", addedHour)
+                    var thisDayStart = Calendar.current.startOfDay(for: Date())
+                    while addedHour < 0 {
+                        
+                        let previousDayStart: Date = {
+                            let components = DateComponents(day: -1)
+                            return Calendar.current.date(byAdding: components, to: thisDayStart)!
+                          }()
+                        let previousDayEnd: Date = {
+                            let components = DateComponents(second: -1)
+                            return Calendar.current.date(byAdding: components, to: thisDayStart)!
+                          }()
+                        let prevDayEval = self.realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", previousDayStart, previousDayEnd)
+                        if (prevDayEval.first != nil) {
+                            let newAddedHour = addedHour + prevDayEval.first!.tot_time
+                            prevDayEval.first?.tot_time = max(0.0, newAddedHour)
+                            addedHour = newAddedHour
+                        }
+                        thisDayStart = previousDayStart
+                    }
+                }
             } else {
-                //print("original record %f", dayEval.first?.tot_time)
-                dayEval.first?.tot_time += addedHour
+                if (dayEval.first == nil) {
+                    //print("initializing record")
+                    let newDayEval = dailyPerfEval()
+                    newDayEval.tot_time += addedHour
+                    newDayEval.date = Date() // set initial data on today.
+                    self.realm.add(newDayEval)
+                } else {
+                    //print("original record %f", dayEval.first?.tot_time)
+                    dayEval.first?.tot_time += addedHour
+                }
             }
             
             try! self.realm.commitWrite()
@@ -606,7 +656,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             
         }
         // Update view.
-        viewDidLoad()
+        self.viewDidLoad()
         
     }
     

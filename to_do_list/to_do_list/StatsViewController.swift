@@ -217,9 +217,10 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
           return Calendar.current.date(byAdding: components, to: yesterday)!
         }()
         
-//        print("***")
+        print("***")
 //        print(format.string(from: twoWeeksAgoEnd))
-//        print(format.string(from: yesterday))
+        print(format.string(from: fourWeeksAgoEnd))
+        print(format.string(from: yesterday))
         
         let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", fourWeeksAgoEnd, yesterday)
         
@@ -283,10 +284,10 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         var aa = 0.0
         var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
-//        print("##########")
+        print("##########")
         for dayEval in dayEval14 {
-//            print(format.string(from: dayEval.date))
-//            print(dayEval.tot_time)
+            print(format.string(from: dayEval.date))
+            print(dayEval.tot_time)
             // add n zero days if current dayEval is more than 24 hours after the previous dayVal. Do this first.
             let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: prevTime, to: Calendar.current.startOfDay(for: dayEval.date))
             if diffTime.day ?? 0 > 1 {
@@ -316,6 +317,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
+            print(rawVal[aa])
             yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
             aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights.last!))
             aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights.last!))

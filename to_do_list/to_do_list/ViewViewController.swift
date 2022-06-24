@@ -92,12 +92,13 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
         itemLabel.text = item?.item
-        let textHeight = ((itemLabel.text?.count ?? 0) / 37 + 1) * 21
+        let numberOfLines = (itemLabel.text?.count ?? 0) / 37 + 1
+        let textHeight = (numberOfLines) * 21
         let deltaY = 21
         
         itemLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY, width: 360-xOffSet*2, height: textHeight)
         itemLabel.lineBreakMode = .byWordWrapping
-        itemLabel.numberOfLines = 4
+        itemLabel.numberOfLines = numberOfLines
         scrollView.addSubview(itemLabel)
         
         dateLabel.frame = CGRect(x: 106+xOffSet, y: yOffSet + deltaY*2 + textHeight, width: 334-xOffSet*2, height: 21)
@@ -522,12 +523,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     }
                     
                 } else {
-                    print("original record %f", dayEval.first?.tot_time)
+                    //print("original record %f", dayEval.first?.tot_time)
                     let newAddedHour = addedHour + dayEval.first!.tot_time
-                    print("new record %f", newAddedHour)
+                    //print("new record %f", newAddedHour)
                     dayEval.first?.tot_time = max(0.0, newAddedHour)
                     addedHour = newAddedHour
-                    print("addded hour now %f", addedHour)
+                    //print("addded hour now %f", addedHour)
                     var thisDayStart = Calendar.current.startOfDay(for: Date())
                     while addedHour < 0 {
                         

@@ -16,17 +16,22 @@ import RealmSwift
 
 import SpriteKit
 
-class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDelegate, UITextFieldDelegate {
+class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDelegate, UITextFieldDelegate, IAxisValueFormatter {
     
+    // IValueFormatter formats value ticks on the plot.
     var textField = UITextField()
     
     var textFieldUp = UITextField()
     
     var textFieldMid = UITextField()
     
+    var textFieldPeriod = UITextField()
+    
     var days = 14
     
     var wdays = 7
+    
+    var period = 7
     
     let emitterNode = SKEmitterNode(fileNamed: "snow1.sks")!
     
@@ -77,6 +82,14 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         emitterNode.particlePositionRange.dx = scene.frame.width
         scrollView.addSubview(skView)
     }
+    
+//    func stringForValue(_ value: Double, entry: ChartDataEntry, dataSetIndex: Int, viewPortHandler: ViewPortHandler?) -> String {
+//        return String(Int(value) % period)
+//    }
+    
+    func stringForValue(_ value: Double, axis: AxisBase?) -> String {
+        return String(Int(value) % period)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -101,7 +114,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         lineChart.heightToWidth(of: view)
         
         let claerBut = UIButton(type: .system)
-        claerBut.frame = CGRect(x: 255, y: 720, width: 100, height: 50)
+        claerBut.frame = CGRect(x: 255, y: 780, width: 100, height: 50)
         claerBut.setTitle("Delete", for: .normal)
         claerBut.layer.borderWidth = 1.0
         claerBut.layer.borderColor = UIColor.blue.cgColor
@@ -110,7 +123,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         scrollView.addSubview(claerBut)
         
         let plotBut = UIButton(type: .system)
-        plotBut.frame = CGRect(x: 255, y: 630, width: 100, height: 50)
+        plotBut.frame = CGRect(x: 255, y: 660, width: 100, height: 50)
         plotBut.setTitle("Plot", for: .normal)
         plotBut.layer.borderWidth = 1.0
         plotBut.layer.borderColor = UIColor.blue.cgColor
@@ -119,7 +132,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         scrollView.addSubview(plotBut)
         
         textField.delegate = self
-        textField.frame = CGRect(x: 15, y: 720, width: 200, height: 50)
+        textField.frame = CGRect(x: 15, y: 780, width: 200, height: 50)
         textField.borderStyle = UITextField.BorderStyle.roundedRect
         textField.text = "Put # of records to keep"
         //self.view.addSubview(textField)
@@ -131,6 +144,13 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         textFieldUp.text = "Put # of records to plot"
         //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldUp)
+        
+        textFieldPeriod.delegate = self
+        textFieldPeriod.frame = CGRect(x: 15, y: 720, width: 200, height: 50)
+        textFieldPeriod.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldPeriod.text = "Put period of x-label"
+        //self.view.addSubview(textFieldUp)
+        scrollView.addSubview(textFieldPeriod)
         
         textFieldMid.delegate = self
         textFieldMid.frame = CGRect(x: 15, y: 660, width: 200, height: 50)
@@ -361,6 +381,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         let data = LineChartData(dataSets: [set1, set2, set3, set4])
         
+        lineChart.xAxis.valueFormatter = self
         lineChart.data = data
     }
     
@@ -439,6 +460,10 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         let daysToPlot = Int(textFieldUp.text!) ?? 14
         let window = Int(textFieldMid.text!) ?? 7
+        period = Int(textFieldPeriod.text!) ?? 7
+        if period <= 0 {
+            period = 100
+        }
         
         setData(days: daysToPlot, wdays: window)
         

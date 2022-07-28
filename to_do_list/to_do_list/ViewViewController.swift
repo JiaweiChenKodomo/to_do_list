@@ -854,8 +854,17 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     }
                     
                 } else {
+                    // Item not checked in. No guarantee that anything is checked in on the day logging this item. If today's record is not initiated, initiate it.
                     
-                    dayEval.first?.tot_finish += myItem.budget * ratio
+                    if (dayEval.first == nil) {
+                        //print("initializing record")
+                        let newDayEval = dailyPerfEval()
+                        newDayEval.tot_finish += myItem.budget * ratio
+                        self.realm.add(newDayEval)
+                    } else {
+                        //print("original record %f", dayEval.first?.tot_time)
+                        dayEval.first?.tot_finish += myItem.budget * ratio
+                    }
                 }
                 
                 // Subtract used budget from both the time spent and the budget to reflect the left over task load.
@@ -935,8 +944,17 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     }
                     
                 } else {
+                    // Item not checked in. No guarantee that anything is checked in on the day logging this item. If today's record is not initiated, initiate it.
                     
-                    dayEval.first?.tot_finish += myItem.budget * ratio
+                    if (dayEval.first == nil) {
+                        //print("initializing record")
+                        let newDayEval = dailyPerfEval()
+                        newDayEval.tot_finish += myItem.budget * ratio
+                        self.realm.add(newDayEval)
+                    } else {
+                        //print("original record %f", dayEval.first?.tot_time)
+                        dayEval.first?.tot_finish += myItem.budget * ratio
+                    }
                 }
                 
                 // Subtract used budget from both the time spent and the budget to reflect the left over task load.

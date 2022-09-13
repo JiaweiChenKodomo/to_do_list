@@ -25,7 +25,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     private var canNotify = true;
     
     private let xOffSet = 10;
-    private let yOffSet = 120;
+    private let yOffSet = 40;
     
     private let TvBLabel = UILabel()
     private let TLabel = UILabel()
@@ -85,18 +85,21 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             self.canNotify = granted
         }
         
-        scrollView = UIScrollView(frame: view.bounds)
-        scrollView.contentSize = view.bounds.size
-        view.addSubview(scrollView)
-        scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        //scrollView.contentOffset = CGPoint(x: 0, y: 150)
-        
         itemLabel.text = item?.item
-        let numberOfLines = (itemLabel.text?.count ?? 0) / 37 + 1
+        let numberOfLines = (itemLabel.text?.count ?? 0) / 35 + 1
         let textHeight = (numberOfLines) * 21
         let deltaY = 21
         
-        itemLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY, width: 360-xOffSet*2, height: textHeight)
+        //scrollView = UIScrollView(frame: view.bounds)
+        scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: Int(view.bounds.width), height: Int(view.bounds.height)))
+        //scrollView.contentSize = view.bounds.size
+        let maxHeight = max(yOffSet + deltaY*7 + textHeight + 350, Int(view.bounds.height)+1)
+        scrollView.contentSize = CGSize.init(width: view.bounds.size.width, height: CGFloat(maxHeight))
+        // A right combination of contentOffset and contentSize is the most important for scrollView.
+        scrollView.contentOffset = CGPoint(x: 0, y: 15)
+        
+        
+        itemLabel.frame = CGRect(x: 30+xOffSet, y: yOffSet + deltaY, width: 350-xOffSet*2, height: textHeight)
         itemLabel.lineBreakMode = .byWordWrapping
         itemLabel.numberOfLines = numberOfLines
         scrollView.addSubview(itemLabel)
@@ -237,8 +240,16 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(focusBut)
         scrollView.addSubview(focusBut)
         
+        //print(self.view.subviews.count)
+        for currentSubView in self.view.subviews {
+            currentSubView.removeFromSuperview()
+        }
+        
         self.view.addSubview(scrollView)
+        
     }
+    
+    
     @objc func step() {
         if !item!.checkIn {
             // Checked out. Stop the timer. Don't update anything now.
@@ -457,7 +468,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
             
         }
         // Update view.
-        viewDidLoad()
+        self.viewDidLoad()
         
     }
     

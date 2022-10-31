@@ -108,7 +108,7 @@ public:
 
     /// Get the specified reciprocal changeset. The targeted history entry is
     /// the one whose untransformed changeset produced the specified version.
-    virtual ChunkedBinaryData get_reciprocal_transform(version_type version) const = 0;
+    virtual ChunkedBinaryData get_reciprocal_transform(version_type version, bool& is_compressed) const = 0;
 
     /// Replace the specified reciprocally transformed changeset. The targeted
     /// history entry is the one whose untransformed changeset produced the
@@ -126,7 +126,6 @@ class TransformError; // Exception
 class Transformer {
 public:
     class RemoteChangeset;
-    class Reporter;
 
     /// Produce operationally transformed versions of the specified changesets,
     /// which are assumed to be received from a particular remote peer, P,
@@ -171,8 +170,7 @@ public:
     /// FIXME: Consider using std::error_code instead of throwing
     /// TransformError.
     virtual void transform_remote_changesets(TransformHistory&, file_ident_type local_file_ident,
-                                             version_type current_local_version, Changeset* changesets,
-                                             std::size_t num_changesets, Reporter* = nullptr,
+                                             version_type current_local_version, util::Span<Changeset> changesets,
                                              util::Logger* = nullptr) = 0;
 
     virtual ~Transformer() noexcept {}
@@ -196,8 +194,8 @@ public:
 
     TransformerImpl();
 
-    void transform_remote_changesets(TransformHistory&, file_ident_type, version_type, Changeset*, std::size_t,
-                                     Reporter*, util::Logger*) override;
+    void transform_remote_changesets(TransformHistory&, file_ident_type, version_type, util::Span<Changeset>,
+                                     util::Logger*) override;
 
     struct Side;
     struct MajorSide;
@@ -208,19 +206,16 @@ protected:
                                   std::size_t their_size,
                                   // our_changesets is a pointer-pointer because these changesets
                                   // are held by the reciprocal transform cache.
-                                  Changeset** our_changesets, std::size_t our_size, Reporter* reporter,
-                                  util::Logger* logger);
+                                  Changeset** our_changesets, std::size_t our_size, util::Logger* logger);
 
 private:
-    util::metered::map<version_type, std::unique_ptr<Changeset>> m_reciprocal_transform_cache;
+    std::map<version_type, Changeset> m_reciprocal_transform_cache;
 
     TransactLogParser m_changeset_parser;
 
     Changeset& get_reciprocal_transform(TransformHistory&, file_ident_type local_file_ident, version_type version,
                                         const HistoryEntry&);
     void flush_reciprocal_transform_cache(TransformHistory&);
-
-    static size_t emit_changesets(const Changeset*, size_t num_changesets, util::Buffer<char>& output_buffer);
 
     struct Discriminant;
     struct Transformer;
@@ -277,12 +272,6 @@ public:
 
     RemoteChangeset() {}
     RemoteChangeset(version_type rv, version_type lv, ChunkedBinaryData d, timestamp_type ot, file_ident_type fi);
-};
-
-
-class Transformer::Reporter {
-public:
-    virtual void on_changesets_merged(long num_merges) = 0;
 };
 
 

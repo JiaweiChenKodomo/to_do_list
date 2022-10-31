@@ -38,16 +38,34 @@ class ColumnAttrMask;
 class CascadeState;
 
 struct FieldValue {
-    FieldValue(ColKey k, Mixed val)
+    FieldValue(ColKey k, Mixed val, bool is_default = false) noexcept
         : col_key(k)
         , value(val)
+        , is_default(is_default)
     {
     }
     ColKey col_key;
     Mixed value;
+    bool is_default;
 };
 
-using FieldValues = std::vector<FieldValue>;
+class FieldValues {
+public:
+    FieldValues() {}
+    FieldValues(std::initializer_list<FieldValue>);
+    void insert(ColKey k, Mixed val, bool is_default = false);
+    auto begin() const
+    {
+        return m_values.begin();
+    }
+    auto end() const
+    {
+        return m_values.end();
+    }
+
+private:
+    std::vector<FieldValue> m_values;
+};
 
 class ClusterNode : public Array {
 public:
@@ -307,6 +325,7 @@ private:
     void do_erase_key(size_t ndx, ColKey col, CascadeState& state);
     void do_insert_key(size_t ndx, ColKey col, Mixed init_val, ObjKey origin_key);
     void do_insert_link(size_t ndx, ColKey col, Mixed init_val, ObjKey origin_key);
+    void do_insert_mixed(size_t ndx, ColKey col_key, Mixed init_value, ObjKey origin_key);
     template <class T>
     void set_spec(T&, ColKey::Idx) const;
     template <class ArrayType>

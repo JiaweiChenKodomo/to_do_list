@@ -28,14 +28,15 @@
 #include <realm/object-store/property.hpp>
 #include <realm/object-store/set.hpp>
 #include <realm/object-store/shared_realm.hpp>
-#include <realm/object-store/util/checked_mutex.hpp>
 #include <realm/object-store/util/copyable_atomic.hpp>
 
 #include <realm/table_view.hpp>
+#include <realm/util/checked_mutex.hpp>
 #include <realm/util/optional.hpp>
 
 namespace realm {
 class Mixed;
+class SectionedResults;
 
 namespace _impl {
 class ResultsNotifierBase;
@@ -76,6 +77,9 @@ public:
     // Get a query which will match the same rows as is contained in this Results
     // Returned query will not be valid if the current mode is Empty
     Query get_query() const REQUIRES(!m_mutex);
+
+    // Get ordering for thr query associated with the result
+    const DescriptorOrdering& get_ordering() const;
 
     // Get the Collection this Results is derived from, if any
     const std::shared_ptr<CollectionBase>& get_collection() const
@@ -166,8 +170,9 @@ public:
     Results snapshot() const& REQUIRES(!m_mutex);
     Results snapshot() && REQUIRES(!m_mutex);
 
-    // Returns a frozen copy of this result.
-    Results freeze(std::shared_ptr<Realm> const& realm) REQUIRES(!m_mutex);
+    // Returns a frozen copy of this result
+    // Equivalent to producing a thread-safe reference and resolving it in the frozen realm.
+    Results freeze(std::shared_ptr<Realm> const& frozen_realm) REQUIRES(!m_mutex);
 
     // Returns whether or not this Results is frozen.
     bool is_frozen() const REQUIRES(!m_mutex);
@@ -200,11 +205,26 @@ public:
     }
 
     enum class Mode {
-        Empty,      // Backed by nothing (for missing tables)
-        Table,      // Backed directly by a Table
-        Collection, // Backed by a collection of links or primitives
-        Query,      // Backed by a query that has not yet been turned into a TableView
-        TableView,  // Backed by a TableView created from a Query
+        // A default-constructed Results which is backed by nothing. This
+        // behaves as if it was backed by an empty table/collection, and is
+        // inteded for read-only Realms which are missing tables.
+        Empty,
+        // Backed directly by a Table with no sort/filter/distinct.
+        Table,
+        // Backed by a Collection, possibly with sort/distinct (but no filter).
+        // Collections of Objects with a sort/distinct will transition to
+        // TableView the first time they're accessed, while collections of other
+        // types will remain in mode Collection and apply sort/distinct via
+        // m_list_indices.
+        Collection,
+        // Backed by a Query that has not yet been run. May have sort and distinct.
+        // Switches to mode TableView as soon as the query has to be run for
+        // the first time, except for size() with no distinct, which gets the
+        // count from the Query directly.
+        Query,
+        // Backed by a TableView of some sort, which encompases things like
+        // sort and distinct
+        TableView,
     };
     // Get the current mode of the Results
     // Ideally this would not be public but it's needed for some KVO stuff
@@ -251,6 +271,7 @@ public:
         PropertyType property_type;
 
         UnsupportedColumnTypeException(ColKey column, Table const& table, const char* operation);
+        UnsupportedColumnTypeException(ColKey column, ConstTableRef table, const char* operation);
         UnsupportedColumnTypeException(ColKey column, TableView const& tv, const char* operation);
     };
 
@@ -315,12 +336,40 @@ public:
         m_update_policy = policy;
     }
 
+    /**
+     * Creates a SectionedResults object by using a user defined sectioning algorithm to project the key for each
+     * section.
+     *
+     * @param section_key_func The callback to be itterated on each value in the underlying Results.
+     * This callback must return a value which defines the section key
+     *
+     * @return A SectionedResults object using a user defined sectioning algoritm.
+     */
+    SectionedResults
+    sectioned_results(util::UniqueFunction<Mixed(Mixed value, std::shared_ptr<Realm> realm)> section_key_func);
+    enum class SectionedResultsOperator {
+        FirstLetter // Section by the first letter of each string element. Note that col must be a string.
+    };
+
+    /**
+     * Creates a SectionedResults object by using a built in sectioning algorithm to help with efficiency and reduce
+     * overhead from the SDK level.
+     *
+     * @param op The `SectionedResultsOperator` operator to use
+     * @param property_name Takes a property name if sectioning on a collection of links, the property name needs to
+     * reference the column being sectioned on.
+     *
+     * @return A SectionedResults object with results sectioned based on the chosen built in operator.
+     */
+    SectionedResults sectioned_results(SectionedResultsOperator op,
+                                       util::Optional<StringData> property_name = util::none);
+
 private:
     std::shared_ptr<Realm> m_realm;
     mutable util::CopyableAtomic<const ObjectSchema*> m_object_schema = nullptr;
     Query m_query GUARDED_BY(m_mutex);
-    TableView m_table_view GUARDED_BY(m_mutex);
     ConstTableRef m_table;
+    TableView m_table_view GUARDED_BY(m_mutex);
     DescriptorOrdering m_descriptor_ordering;
     std::shared_ptr<CollectionBase> m_collection;
     util::Optional<std::vector<size_t>> m_list_indices GUARDED_BY(m_mutex);
@@ -328,7 +377,9 @@ private:
     _impl::CollectionNotifier::Handle<_impl::ResultsNotifierBase> m_notifier;
 
     Mode m_mode GUARDED_BY(m_mutex) = Mode::Empty;
+    friend class SectionedResults;
     UpdatePolicy m_update_policy = UpdatePolicy::Auto;
+    uint64_t m_last_collection_content_version GUARDED_BY(m_mutex) = 0;
 
     void validate_read() const;
     void validate_write() const;
@@ -341,6 +392,7 @@ private:
     void prepare_async(ForCallback);
 
     ColKey key(StringData) const;
+    size_t actual_index(size_t) const noexcept REQUIRES(m_mutex);
 
     template <typename T>
     util::Optional<T> try_get(size_t) REQUIRES(m_mutex);
@@ -352,8 +404,14 @@ private:
     template <typename Fn>
     auto dispatch(Fn&&) const REQUIRES(!m_mutex);
 
-    void evaluate_sort_and_distinct_on_collection() REQUIRES(m_mutex);
-    void do_evaluate_query_if_needed(bool wants_notifications = true) REQUIRES(m_mutex);
+    enum class EvaluateMode { Count, Snapshot, Normal };
+    /// Returns true if the underlying table_view or collection has changed, and is waiting
+    /// for `ensure_up_to_date` to run.
+    bool has_changed() REQUIRES(!m_mutex);
+    void ensure_up_to_date(EvaluateMode mode = EvaluateMode::Normal) REQUIRES(m_mutex);
+
+    // Shared logic between freezing and thawing Results as the Core API is the same.
+    Results import_copy_into_realm(std::shared_ptr<Realm> const& realm) REQUIRES(!m_mutex);
 
     class IteratorWrapper {
     public:

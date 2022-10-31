@@ -24,7 +24,6 @@
 #include <realm/array_key.hpp>
 
 #include <numeric> // std::iota
-#include <set>
 
 namespace realm {
 
@@ -43,12 +42,13 @@ protected:
     void insert_repl(Replication* repl, size_t index, Mixed value) const;
     void erase_repl(Replication* repl, size_t index, Mixed value) const;
     void clear_repl(Replication* repl) const;
+    static std::vector<Mixed> convert_to_mixed_set(const CollectionBase& rhs);
 };
 
 template <class T>
-class Set final : public CollectionBaseImpl<SetBase> {
+class Set final : public CollectionBaseImpl<SetBase, Set<T>> {
 public:
-    using Base = CollectionBaseImpl<SetBase>;
+    using Base = CollectionBaseImpl<SetBase, Set>;
     using value_type = T;
     using iterator = CollectionIterator<Set<T>>;
 
@@ -151,32 +151,98 @@ public:
         return *m_tree;
     }
 
-private:
-    friend class LnkSet;
-    mutable std::unique_ptr<BPlusTree<T>> m_tree;
-    using Base::m_col_key;
-    using Base::m_obj;
-    using Base::m_valid;
-
-    void create()
+    UpdateStatus update_if_needed() const final
     {
-        m_tree->create();
-        m_valid = true;
-    }
-
-    REALM_NOINLINE bool init_from_parent() const final
-    {
-        m_valid = m_tree->init_from_parent();
-        update_content_version();
-        return m_valid;
-    }
-
-    REALM_NOINLINE void ensure_created()
-    {
-        if (!m_valid && m_obj.is_valid()) {
-            create();
+        auto status = Base::update_if_needed();
+        switch (status) {
+            case UpdateStatus::Detached: {
+                m_tree.reset();
+                return UpdateStatus::Detached;
+            }
+            case UpdateStatus::NoChange:
+                if (m_tree && m_tree->is_attached()) {
+                    return UpdateStatus::NoChange;
+                }
+                // The tree has not been initialized yet for this accessor, so
+                // perform lazy initialization by treating it as an update.
+                [[fallthrough]];
+            case UpdateStatus::Updated: {
+                bool attached = init_from_parent(false);
+                return attached ? UpdateStatus::Updated : UpdateStatus::Detached;
+            }
         }
+        REALM_UNREACHABLE();
     }
+
+    UpdateStatus ensure_created() final
+    {
+        auto status = Base::ensure_created();
+        switch (status) {
+            case UpdateStatus::Detached:
+                break; // Not possible (would have thrown earlier).
+            case UpdateStatus::NoChange: {
+                if (m_tree && m_tree->is_attached()) {
+                    return UpdateStatus::NoChange;
+                }
+                // The tree has not been initialized yet for this accessor, so
+                // perform lazy initialization by treating it as an update.
+                [[fallthrough]];
+            }
+            case UpdateStatus::Updated: {
+                bool attached = init_from_parent(true);
+                REALM_ASSERT(attached);
+                return attached ? UpdateStatus::Updated : UpdateStatus::Detached;
+            }
+        }
+
+        REALM_UNREACHABLE();
+    }
+
+private:
+    // Friend because it needs access to `m_tree` in the implementation of
+    // `ObjCollectionBase::get_mutable_tree()`.
+    friend class LnkSet;
+
+    // BPlusTree must be wrapped in an `std::unique_ptr` because it is not
+    // default-constructible, due to its `Allocator&` member.
+    mutable std::unique_ptr<BPlusTree<T>> m_tree;
+
+    using Base::bump_content_version;
+    using Base::m_col_key;
+    using Base::m_nullable;
+    using Base::m_obj;
+
+    bool init_from_parent(bool allow_create) const
+    {
+        if (!m_tree) {
+            m_tree.reset(new BPlusTree<T>(m_obj.get_alloc()));
+            const ArrayParent* parent = this;
+            m_tree->set_parent(const_cast<ArrayParent*>(parent), 0);
+        }
+
+        if (m_tree->init_from_parent()) {
+            // All is well
+            return true;
+        }
+
+        if (!allow_create) {
+            return false;
+        }
+
+        // The ref in the column was NULL, create the tree in place.
+        m_tree->create();
+        REALM_ASSERT(m_tree->is_attached());
+        return true;
+    }
+
+    /// Update the accessor and return true if it is attached after the update.
+    inline bool update() const
+    {
+        return update_if_needed() != UpdateStatus::Detached;
+    }
+
+    // `do_` methods here perform the action after preconditions have been
+    // checked (bounds check, writability, etc.).
     void do_insert(size_t ndx, T value);
     void do_erase(size_t ndx);
     void do_clear();
@@ -203,6 +269,8 @@ private:
 
     template <class It1, class It2>
     void assign_symmetric_difference(It1, It2);
+
+    static std::vector<T> convert_to_set(const CollectionBase& rhs, bool nullable);
 };
 
 class LnkSet final : public ObjCollectionBase<SetBase> {
@@ -215,7 +283,6 @@ public:
     LnkSet(const Obj& owner, ColKey col_key)
         : m_set(owner, col_key)
     {
-        update_unresolved();
     }
 
     LnkSet(const LnkSet&) = default;
@@ -323,14 +390,10 @@ public:
 private:
     Set<ObjKey> m_set;
 
-    bool do_update_if_needed() const final
+    // Overriding members of ObjCollectionBase:
+    UpdateStatus do_update_if_needed() const final
     {
         return m_set.update_if_needed();
-    }
-
-    bool do_init_from_parent() const final
-    {
-        return m_set.init_from_parent();
     }
 
     BPlusTree<ObjKey>* get_mutable_tree() const final
@@ -434,36 +497,21 @@ struct SetElementEquals<Mixed> {
 template <class T>
 inline Set<T>::Set(const Obj& obj, ColKey col_key)
     : Base(obj, col_key)
-    , m_tree(new BPlusTree<value_type>(obj.get_alloc()))
 {
     if (!col_key.is_set()) {
         throw LogicError(LogicError::collection_type_mismatch);
     }
 
     check_column_type<value_type>(m_col_key);
-
-    m_tree->set_parent(this, 0); // ndx not used, implicit in m_owner
-    if (m_obj) {
-        // Fine because init_from_parent() is final.
-        this->init_from_parent();
-    }
 }
 
 template <class T>
 inline Set<T>::Set(const Set& other)
     : Base(static_cast<const Base&>(other))
 {
-    // FIXME: If the other side needed an update, we could be using a stale ref
-    // below.
-    REALM_ASSERT(!other.update_if_needed());
-
-    if (other.m_tree) {
-        Allocator& alloc = other.m_tree->get_alloc();
-        m_tree = std::make_unique<BPlusTree<T>>(alloc);
-        m_tree->set_parent(this, 0);
-        if (m_valid)
-            m_tree->init_from_ref(other.m_tree->get_ref());
-    }
+    // Reset the content version so we can rely on init_from_parent() being
+    // called lazily when the accessor is used.
+    Base::reset_content_version();
 }
 
 template <class T>
@@ -482,15 +530,10 @@ inline Set<T>& Set<T>::operator=(const Set& other)
     Base::operator=(static_cast<const Base&>(other));
 
     if (this != &other) {
+        // Just reset the pointer and rely on init_from_parent() being called
+        // when the accessor is actually used.
         m_tree.reset();
-        if (other.m_tree) {
-            Allocator& alloc = other.m_tree->get_alloc();
-            m_tree = std::make_unique<BPlusTree<T>>(alloc);
-            m_tree->set_parent(this, 0);
-            if (m_valid) {
-                m_tree->init_from_ref(other.m_tree->get_ref());
-            }
-        }
+        Base::reset_content_version();
     }
 
     return *this;
@@ -505,6 +548,8 @@ inline Set<T>& Set<T>::operator=(Set&& other) noexcept
         m_tree = std::exchange(other.m_tree, nullptr);
         if (m_tree) {
             m_tree->set_parent(this, 0);
+            // Note: We do not need to call reset_content_version(), because we
+            // took both `m_tree` and `m_content_version` from `other`.
         }
     }
 
@@ -566,7 +611,7 @@ template <class T>
 REALM_NOINLINE auto Set<T>::find_impl(const T& value) const -> iterator
 {
     auto b = this->begin();
-    auto e = this->end();
+    auto e = this->end(); // Note: This ends up calling `update_if_needed()`.
     return std::lower_bound(b, e, value, SetElementLessThan<T>{});
 }
 
@@ -579,7 +624,6 @@ std::pair<size_t, bool> Set<T>::insert(T value)
         throw LogicError(LogicError::column_not_nullable);
 
     ensure_created();
-    this->ensure_writeable();
     auto it = find_impl(value);
 
     if (it != this->end() && SetElementEquals<T>{}(*it, value)) {
@@ -617,10 +661,7 @@ std::pair<size_t, bool> Set<T>::insert_any(Mixed value)
 template <class T>
 std::pair<size_t, bool> Set<T>::erase(T value)
 {
-    update_if_needed();
-    this->ensure_writeable();
-
-    auto it = find_impl(value);
+    auto it = find_impl(value); // Note: This ends up calling `update_if_needed()`.
 
     if (it == end() || !SetElementEquals<T>{}(*it, value)) {
         return {npos, false};
@@ -665,13 +706,7 @@ std::pair<size_t, bool> Set<T>::erase_null()
 template <class T>
 REALM_NOINLINE size_t Set<T>::size() const
 {
-    if (!is_attached())
-        return 0;
-    update_if_needed();
-    if (!m_valid) {
-        return 0;
-    }
-    return m_tree->size();
+    return update() ? m_tree->size() : 0;
 }
 
 template <class T>
@@ -683,9 +718,6 @@ inline bool Set<T>::is_null(size_t ndx) const
 template <class T>
 inline void Set<T>::clear()
 {
-    ensure_created();
-    update_if_needed();
-    this->ensure_writeable();
     if (size() > 0) {
         if (Replication* repl = this->m_obj.get_replication()) {
             this->clear_repl(repl);
@@ -698,29 +730,37 @@ inline void Set<T>::clear()
 template <class T>
 inline util::Optional<Mixed> Set<T>::min(size_t* return_ndx) const
 {
-    update_if_needed();
-    return MinHelper<T>::eval(*m_tree, return_ndx);
+    if (update()) {
+        return MinHelper<T>::eval(*m_tree, return_ndx);
+    }
+    return MinHelper<T>::not_found(return_ndx);
 }
 
 template <class T>
 inline util::Optional<Mixed> Set<T>::max(size_t* return_ndx) const
 {
-    update_if_needed();
-    return MaxHelper<T>::eval(*m_tree, return_ndx);
+    if (update()) {
+        return MaxHelper<T>::eval(*m_tree, return_ndx);
+    }
+    return MaxHelper<T>::not_found(return_ndx);
 }
 
 template <class T>
 inline util::Optional<Mixed> Set<T>::sum(size_t* return_cnt) const
 {
-    update_if_needed();
-    return SumHelper<T>::eval(*m_tree, return_cnt);
+    if (update()) {
+        return SumHelper<T>::eval(*m_tree, return_cnt);
+    }
+    return SumHelper<T>::not_found(return_cnt);
 }
 
 template <class T>
 inline util::Optional<Mixed> Set<T>::avg(size_t* return_cnt) const
 {
-    update_if_needed();
-    return AverageHelper<T>::eval(*m_tree, return_cnt);
+    if (update()) {
+        return AverageHelper<T>::eval(*m_tree, return_cnt);
+    }
+    return AverageHelper<T>::not_found(return_cnt);
 }
 
 void set_sorted_indices(size_t sz, std::vector<size_t>& indices, bool ascending);
@@ -757,28 +797,34 @@ inline void Set<T>::do_clear()
     m_tree->clear();
 }
 
-namespace {
 template <class T>
-auto convert_to_set(const CollectionBase& rhs, bool nullable)
+std::vector<T> Set<T>::convert_to_set(const CollectionBase& rhs, bool nullable)
 {
-    std::set<T, SetElementLessThan<T>> ret;
-    for (size_t i = 0; i < rhs.size(); i++) {
-        auto val = rhs.get_any(i);
-        if constexpr (std::is_same_v<T, Mixed>) {
-            ret.emplace(val);
+    if constexpr (std::is_same_v<T, Mixed>) {
+        return SetBase::convert_to_mixed_set(rhs);
+    }
+
+    std::vector<Mixed> mixed = SetBase::convert_to_mixed_set(rhs);
+    std::vector<T> ret;
+    ret.reserve(mixed.size());
+    for (auto&& val : mixed) {
+        if constexpr (std::is_same_v<T, ObjKey>) {
+            static_cast<void>(nullable);
+            if (val.is_type(type_Link, type_TypedLink)) {
+                ret.push_back(val.get<ObjKey>());
+            }
         }
         else {
             if (val.is_type(ColumnTypeTraits<T>::id)) {
-                ret.emplace(val.get<T>());
+                ret.push_back(val.get<T>());
             }
             else if (val.is_null() && nullable) {
-                ret.emplace(BPlusTree<T>::default_value(true));
+                ret.push_back(BPlusTree<T>::default_value(true));
             }
         }
     }
     return ret;
 }
-} // namespace
 
 template <class T>
 bool Set<T>::is_subset_of(const CollectionBase& rhs) const
@@ -786,7 +832,7 @@ bool Set<T>::is_subset_of(const CollectionBase& rhs) const
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return is_subset_of(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return is_subset_of(other_set.begin(), other_set.end());
 }
 
@@ -803,7 +849,7 @@ bool Set<T>::is_strict_subset_of(const CollectionBase& rhs) const
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return size() != rhs.size() && is_subset_of(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return size() != other_set.size() && is_subset_of(other_set.begin(), other_set.end());
 }
 
@@ -813,7 +859,7 @@ bool Set<T>::is_superset_of(const CollectionBase& rhs) const
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return is_superset_of(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return is_superset_of(other_set.begin(), other_set.end());
 }
 
@@ -830,7 +876,7 @@ bool Set<T>::is_strict_superset_of(const CollectionBase& rhs) const
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return size() != rhs.size() && is_superset_of(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return size() != other_set.size() && is_superset_of(other_set.begin(), other_set.end());
 }
 
@@ -840,7 +886,7 @@ bool Set<T>::intersects(const CollectionBase& rhs) const
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return intersects(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return intersects(other_set.begin(), other_set.end());
 }
 
@@ -870,7 +916,7 @@ bool Set<T>::set_equals(const CollectionBase& rhs) const
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return size() == rhs.size() && is_subset_of(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return size() == other_set.size() && is_subset_of(other_set.begin(), other_set.end());
 }
 
@@ -880,7 +926,7 @@ inline void Set<T>::assign_union(const CollectionBase& rhs)
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return assign_union(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return assign_union(other_set.begin(), other_set.end());
 }
 
@@ -892,7 +938,7 @@ void Set<T>::assign_union(It1 first, It2 last)
     std::set_difference(first, last, begin(), end(), std::back_inserter(the_diff), SetElementLessThan<T>{});
     // 'the_diff' now contains all the elements that are in foreign set, but not in 'this'
     // Now insert those elements
-    for (auto value : the_diff) {
+    for (auto&& value : the_diff) {
         insert(value);
     }
 }
@@ -903,7 +949,7 @@ inline void Set<T>::assign_intersection(const CollectionBase& rhs)
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return assign_intersection(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return assign_intersection(other_set.begin(), other_set.end());
 }
 
@@ -915,7 +961,7 @@ void Set<T>::assign_intersection(It1 first, It2 last)
     std::set_intersection(first, last, begin(), end(), std::back_inserter(intersection), SetElementLessThan<T>{});
     clear();
     // Elements in intersection comes from foreign set, so ok to use here
-    for (auto value : intersection) {
+    for (auto&& value : intersection) {
         insert(value);
     }
 }
@@ -926,7 +972,7 @@ inline void Set<T>::assign_difference(const CollectionBase& rhs)
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return assign_difference(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return assign_difference(other_set.begin(), other_set.end());
 }
 
@@ -938,7 +984,7 @@ void Set<T>::assign_difference(It1 first, It2 last)
     std::set_intersection(first, last, begin(), end(), std::back_inserter(intersection), SetElementLessThan<T>{});
     // 'intersection' now contains all the elements that are in both foreign set and 'this'.
     // Remove those elements. The elements comes from the foreign set, so ok to refer to.
-    for (auto value : intersection) {
+    for (auto&& value : intersection) {
         erase(value);
     }
 }
@@ -949,7 +995,7 @@ inline void Set<T>::assign_symmetric_difference(const CollectionBase& rhs)
     if (auto other_set = dynamic_cast<const Set<T>*>(&rhs)) {
         return assign_symmetric_difference(other_set->begin(), other_set->end());
     }
-    auto other_set = convert_to_set<T>(rhs, m_nullable);
+    auto other_set = convert_to_set(rhs, m_nullable);
     return assign_symmetric_difference(other_set.begin(), other_set.end());
 }
 
@@ -962,10 +1008,10 @@ void Set<T>::assign_symmetric_difference(It1 first, It2 last)
     std::vector<T> intersection;
     std::set_intersection(first, last, begin(), end(), std::back_inserter(intersection), SetElementLessThan<T>{});
     // Now remove the common elements and add the differences
-    for (auto value : intersection) {
+    for (auto&& value : intersection) {
         erase(value);
     }
-    for (auto value : difference) {
+    for (auto&& value : difference) {
         insert(value);
     }
 }
@@ -982,17 +1028,20 @@ inline bool LnkSet::operator!=(const LnkSet& other) const
 
 inline ObjKey LnkSet::get(size_t ndx) const
 {
-    update_if_needed();
-    return m_set.get(virtual2real(ndx));
+    const auto current_size = size();
+    if (ndx >= current_size) {
+        throw std::out_of_range("Index out of range");
+    }
+    return m_set.m_tree->get(virtual2real(ndx));
 }
 
 inline size_t LnkSet::find(ObjKey value) const
 {
-    update_if_needed();
-
     if (value.is_unresolved()) {
         return not_found;
     }
+
+    update_if_needed();
 
     size_t ndx = m_set.find(value);
     if (ndx == not_found) {
@@ -1018,6 +1067,9 @@ inline std::pair<size_t, bool> LnkSet::insert(ObjKey value)
     update_if_needed();
 
     auto [ndx, inserted] = m_set.insert(value);
+    if (inserted) {
+        update_unresolved(UpdateStatus::Updated);
+    }
     return {real2virtual(ndx), inserted};
 }
 
@@ -1028,6 +1080,7 @@ inline std::pair<size_t, bool> LnkSet::erase(ObjKey value)
 
     auto [ndx, removed] = m_set.erase(value);
     if (removed) {
+        update_unresolved(UpdateStatus::Updated);
         ndx = real2virtual(ndx);
     }
     return {ndx, removed};
@@ -1042,13 +1095,17 @@ inline bool LnkSet::is_null(size_t ndx) const
 inline Mixed LnkSet::get_any(size_t ndx) const
 {
     update_if_needed();
-    return m_set.get_any(virtual2real(ndx));
+    auto obj_key = m_set.get(virtual2real(ndx));
+    return ObjLink{get_target_table()->get_key(), obj_key};
 }
 
 inline std::pair<size_t, bool> LnkSet::insert_null()
 {
     update_if_needed();
     auto [ndx, inserted] = m_set.insert_null();
+    if (inserted) {
+        update_unresolved(UpdateStatus::Updated);
+    }
     return {real2virtual(ndx), inserted};
 }
 
@@ -1057,6 +1114,7 @@ inline std::pair<size_t, bool> LnkSet::erase_null()
     update_if_needed();
     auto [ndx, erased] = m_set.erase_null();
     if (erased) {
+        update_unresolved(UpdateStatus::Updated);
         ndx = real2virtual(ndx);
     }
     return {ndx, erased};
@@ -1066,6 +1124,9 @@ inline std::pair<size_t, bool> LnkSet::insert_any(Mixed value)
 {
     update_if_needed();
     auto [ndx, inserted] = m_set.insert_any(value);
+    if (inserted) {
+        update_unresolved(UpdateStatus::Updated);
+    }
     return {real2virtual(ndx), inserted};
 }
 
@@ -1073,6 +1134,7 @@ inline std::pair<size_t, bool> LnkSet::erase_any(Mixed value)
 {
     auto [ndx, erased] = m_set.erase_any(value);
     if (erased) {
+        update_unresolved(UpdateStatus::Updated);
         ndx = real2virtual(ndx);
     }
     return {ndx, erased};
@@ -1080,12 +1142,15 @@ inline std::pair<size_t, bool> LnkSet::erase_any(Mixed value)
 
 inline void LnkSet::clear()
 {
+    // Note: Explicit call to `ensure_writable()` not needed, because we
+    // explicitly call `clear_unresolved()`.
     m_set.clear();
     clear_unresolved();
 }
 
 inline util::Optional<Mixed> LnkSet::min(size_t* return_ndx) const
 {
+    update_if_needed();
     size_t found = not_found;
     auto value = m_set.min(&found);
     if (found != not_found && return_ndx) {
@@ -1096,6 +1161,7 @@ inline util::Optional<Mixed> LnkSet::min(size_t* return_ndx) const
 
 inline util::Optional<Mixed> LnkSet::max(size_t* return_ndx) const
 {
+    update_if_needed();
     size_t found = not_found;
     auto value = m_set.max(&found);
     if (found != not_found && return_ndx) {
@@ -1203,25 +1269,25 @@ inline ObjKey LnkSet::get_key(size_t ndx) const
 inline void LnkSet::assign_union(const CollectionBase& rhs)
 {
     m_set.assign_union(rhs);
-    update_unresolved();
+    update_unresolved(UpdateStatus::Updated);
 }
 
 inline void LnkSet::assign_intersection(const CollectionBase& rhs)
 {
     m_set.assign_intersection(rhs);
-    update_unresolved();
+    update_unresolved(UpdateStatus::Updated);
 }
 
 inline void LnkSet::assign_difference(const CollectionBase& rhs)
 {
     m_set.assign_difference(rhs);
-    update_unresolved();
+    update_unresolved(UpdateStatus::Updated);
 }
 
 inline void LnkSet::assign_symmetric_difference(const CollectionBase& rhs)
 {
     m_set.assign_symmetric_difference(rhs);
-    update_unresolved();
+    update_unresolved(UpdateStatus::Updated);
 }
 
 } // namespace realm

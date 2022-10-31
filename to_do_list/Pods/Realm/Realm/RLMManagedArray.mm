@@ -29,6 +29,7 @@
 #import "RLMRealm_Private.hpp"
 #import "RLMRealmConfiguration_Private.hpp"
 #import "RLMSchema.h"
+#import "RLMSectionedResults_Private.hpp"
 #import "RLMThreadSafeReference_Private.hpp"
 #import "RLMUtil.hpp"
 
@@ -340,6 +341,10 @@ static void RLMInsertObject(RLMManagedArray *ar, id object, NSUInteger index) {
     RLMArrayValidateMatchingObjectType(self, object);
     changeArray(self, NSKeyValueChangeReplacement, index, ^{
         RLMAccessorContext context(*_objectInfo);
+        if (index >= _backingList.size()) {
+            @throw RLMException(@"Index %llu is out of bounds (must be less than %llu).",
+                                (unsigned long long)index, (unsigned long long)_backingList.size());
+        }
         _backingList.set(context, index, object);
     });
 }
@@ -504,6 +509,19 @@ static void RLMInsertObject(RLMManagedArray *ar, id object, NSUInteger index) {
         i = [indexes indexGreaterThanIndex:i];
     }
     return result;
+}
+
+- (RLMSectionedResults *)sectionedResultsSortedUsingKeyPath:(NSString *)keyPath
+                                                  ascending:(BOOL)ascending
+                                                   keyBlock:(RLMSectionedResultsKeyBlock)keyBlock {
+    return [[RLMSectionedResults alloc] initWithResults:[self sortedResultsUsingKeyPath:keyPath ascending:ascending]
+                                               keyBlock:keyBlock];
+}
+
+- (RLMSectionedResults *)sectionedResultsUsingSortDescriptors:(NSArray<RLMSortDescriptor *> *)sortDescriptors
+                                                     keyBlock:(RLMSectionedResultsKeyBlock)keyBlock {
+    return [[RLMSectionedResults alloc] initWithResults:[self sortedResultsUsingDescriptors:sortDescriptors]
+                                               keyBlock:keyBlock];
 }
 
 - (void)addObserver:(id)observer

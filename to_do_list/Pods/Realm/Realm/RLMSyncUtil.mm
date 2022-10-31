@@ -19,7 +19,6 @@
 #import "RLMSyncUtil_Private.hpp"
 
 #import "RLMObject_Private.hpp"
-#import "RLMRealmConfiguration+Sync.h"
 #import "RLMRealmConfiguration_Private.hpp"
 #import "RLMRealm_Private.hpp"
 #import "RLMSyncConfiguration_Private.hpp"
@@ -34,6 +33,8 @@ NSString *const RLMSyncErrorDomain = @"io.realm.sync";
 NSString *const RLMSyncAuthErrorDomain = @"io.realm.sync.auth";
 NSString *const RLMAppErrorDomain = @"io.realm.app";
 
+NSString *const RLMFlexibleSyncErrorDomain = @"io.realm.sync.flx";
+
 NSString *const kRLMSyncPathOfRealmBackupCopyKey            = @"recovered_realm_location_path";
 NSString *const kRLMSyncErrorActionTokenKey                 = @"error_action_token";
 
@@ -43,6 +44,9 @@ NSString *const kRLMSyncUnderlyingErrorKey      = @"underlying_error";
 #pragma mark - C++ APIs
 
 using namespace realm;
+
+static_assert((int)RLMClientResetModeManual == (int)realm::ClientResyncMode::Manual);
+static_assert((int)RLMClientResetModeDiscardLocal == (int)realm::ClientResyncMode::DiscardLocal);
 
 SyncSessionStopPolicy translateStopPolicy(RLMSyncStopPolicy stopPolicy) {
     switch (stopPolicy) {
@@ -60,17 +64,6 @@ RLMSyncStopPolicy translateStopPolicy(SyncSessionStopPolicy stop_policy) {
         case SyncSessionStopPolicy::AfterChangesUploaded:   return RLMSyncStopPolicyAfterChangesUploaded;
     }
     REALM_UNREACHABLE();
-}
-
-std::shared_ptr<SyncSession> sync_session_for_realm(RLMRealm *realm) {
-    Realm::Config realmConfig = realm.configuration.config;
-    if (auto config = realmConfig.sync_config) {
-        std::shared_ptr<SyncUser> user = config->user;
-        if (user && user->state() != SyncUser::State::Removed) {
-            return user->session_for_on_disk_path(realmConfig.path);
-        }
-    }
-    return nullptr;
 }
 
 CocoaSyncUserContext& context_for(const std::shared_ptr<realm::SyncUser>& user)

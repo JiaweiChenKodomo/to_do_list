@@ -19,8 +19,6 @@
 #import "RLMSyncManager_Private.hpp"
 
 #import "RLMApp_Private.hpp"
-#import "RLMRealmConfiguration+Sync.h"
-#import "RLMSyncConfiguration_Private.hpp"
 #import "RLMSyncSession_Private.hpp"
 #import "RLMUser_Private.hpp"
 #import "RLMSyncUtil_Private.hpp"
@@ -78,13 +76,11 @@ struct CocoaSyncLogger : public realm::util::RootLogger {
     }
 };
 
-struct CocoaSyncLoggerFactory : public realm::SyncLoggerFactory {
-    std::unique_ptr<realm::util::Logger> make_logger(realm::util::Logger::Level level) override {
-        auto logger = std::make_unique<CocoaSyncLogger>();
-        logger->set_level_threshold(level);
-        return std::move(logger);
-    }
-} s_syncLoggerFactory;
+static std::unique_ptr<realm::util::Logger> defaultSyncLogger(realm::util::Logger::Level level) {
+    auto logger = std::make_unique<CocoaSyncLogger>();
+    logger->set_level_threshold(level);
+    return std::move(logger);
+}
 
 struct CallbackLogger : public realm::util::RootLogger {
     RLMSyncLogFunction logFn;
@@ -94,19 +90,15 @@ struct CallbackLogger : public realm::util::RootLogger {
         }
     }
 };
-struct CallbackLoggerFactory : public realm::SyncLoggerFactory {
-    RLMSyncLogFunction logFn;
-    std::unique_ptr<realm::util::Logger> make_logger(realm::util::Logger::Level level) override {
-        auto logger = std::make_unique<CallbackLogger>();
-        logger->logFn = logFn;
-        logger->set_level_threshold(level);
-        return std::move(logger); // not a redundant move because it's a different type
-    }
-
-    CallbackLoggerFactory(RLMSyncLogFunction logFn) : logFn(logFn) { }
-};
 
 } // anonymous namespace
+
+std::shared_ptr<realm::util::Logger> RLMWrapLogFunction(RLMSyncLogFunction fn) {
+    auto logger = std::make_shared<CallbackLogger>();
+    logger->logFn = fn;
+    logger->set_level_threshold(Level::all);
+    return logger;
+}
 
 #pragma mark - RLMSyncManager
 
@@ -117,7 +109,6 @@ struct CallbackLoggerFactory : public realm::SyncLoggerFactory {
 @end
 
 @implementation RLMSyncManager {
-    std::unique_ptr<CallbackLoggerFactory> _loggerFactory;
     std::shared_ptr<SyncManager> _syncManager;
 }
 
@@ -133,7 +124,7 @@ struct CallbackLoggerFactory : public realm::SyncLoggerFactory {
 + (SyncClientConfig)configurationWithRootDirectory:(NSURL *)rootDirectory appId:(NSString *)appId {
     SyncClientConfig config;
     bool should_encrypt = !getenv("REALM_DISABLE_METADATA_ENCRYPTION") && !RLMIsRunningInPlayground();
-    config.logger_factory = &s_syncLoggerFactory;
+    config.logger_factory = defaultSyncLogger;
     config.metadata_mode = should_encrypt ? SyncManager::MetadataMode::Encryption
                                           : SyncManager::MetadataMode::NoEncryption;
     @autoreleasepool {
@@ -184,12 +175,15 @@ struct CallbackLoggerFactory : public realm::SyncLoggerFactory {
 - (void)setLogger:(RLMSyncLogFunction)logFn {
     _logger = logFn;
     if (_logger) {
-        _loggerFactory = std::make_unique<CallbackLoggerFactory>(logFn);
-        _syncManager->set_logger_factory(*_loggerFactory);
+        _syncManager->set_logger_factory([logFn](realm::util::Logger::Level level) {
+            auto logger = std::make_unique<CallbackLogger>();
+            logger->logFn = logFn;
+            logger->set_level_threshold(level);
+            return logger;
+        });
     }
     else {
-        _loggerFactory = nullptr;
-        _syncManager->set_logger_factory(s_syncLoggerFactory);
+        _syncManager->set_logger_factory(defaultSyncLogger);
     }
 }
 
@@ -231,6 +225,10 @@ struct CallbackLoggerFactory : public realm::SyncLoggerFactory {
 
 - (std::shared_ptr<realm::SyncManager>)syncManager {
     return _syncManager;
+}
+
+- (void)waitForSessionTermination {
+    _syncManager->wait_for_sessions_to_terminate();
 }
 @end
 

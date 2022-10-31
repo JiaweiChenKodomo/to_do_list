@@ -32,8 +32,10 @@
 
 #ifdef __cplusplus
 #define RLM_API extern "C" RLM_EXPORT
+#define RLM_API_NOEXCEPT noexcept
 #else
 #define RLM_API RLM_EXPORT
+#define RLM_API_NOEXCEPT
 #endif // __cplusplus
 
 // Some platforms don't support anonymous unions in structs.
@@ -45,12 +47,20 @@
 #define RLM_ANON_UNION_MEMBER(name)
 #endif
 
+// Some platforms can benefit from redefining the userdata type to another type known to the tooling.
+// For example, Dart with its ffigen utility can generate cleaner code if we define realm_userdata_t as Dart_Handle,
+// which is a pointer to an opaque struct treated specially by the Dart code generator.
+// WARNING: only define this to a pointer type, anything else breaks the ABI.
+#ifndef realm_userdata_t
+#define realm_userdata_t void*
+#endif
+
 typedef struct shared_realm realm_t;
 typedef struct realm_schema realm_schema_t;
 typedef struct realm_scheduler realm_scheduler_t;
 typedef struct realm_thread_safe_reference realm_thread_safe_reference_t;
-typedef void (*realm_free_userdata_func_t)(void*);
-typedef void* (*realm_clone_userdata_func_t)(const void*);
+typedef void (*realm_free_userdata_func_t)(realm_userdata_t userdata);
+typedef realm_userdata_t (*realm_clone_userdata_func_t)(const realm_userdata_t userdata);
 
 /* Accessor types */
 typedef struct realm_object realm_object_t;
@@ -64,16 +74,20 @@ typedef struct realm_results realm_results_t;
 
 /* Config types */
 typedef struct realm_config realm_config_t;
+typedef struct realm_app_config realm_app_config_t;
+typedef struct realm_sync_client_config realm_sync_client_config_t;
 typedef struct realm_sync_config realm_sync_config_t;
-typedef bool (*realm_migration_func_t)(void* userdata, realm_t* old_realm, realm_t* new_realm,
+typedef bool (*realm_migration_func_t)(realm_userdata_t userdata, realm_t* old_realm, realm_t* new_realm,
                                        const realm_schema_t* schema);
-typedef bool (*realm_data_initialization_func_t)(void* userdata, realm_t* realm);
-typedef bool (*realm_should_compact_on_launch_func_t)(void* userdata, uint64_t total_bytes, uint64_t used_bytes);
+typedef bool (*realm_data_initialization_func_t)(realm_userdata_t userdata, realm_t* realm);
+typedef bool (*realm_should_compact_on_launch_func_t)(realm_userdata_t userdata, uint64_t total_bytes,
+                                                      uint64_t used_bytes);
 typedef enum realm_schema_mode {
     RLM_SCHEMA_MODE_AUTOMATIC,
     RLM_SCHEMA_MODE_IMMUTABLE,
-    RLM_SCHEMA_MODE_READ_ONLY_ALTERNATIVE,
-    RLM_SCHEMA_MODE_RESET_FILE,
+    RLM_SCHEMA_MODE_READ_ONLY,
+    RLM_SCHEMA_MODE_SOFT_RESET_FILE,
+    RLM_SCHEMA_MODE_HARD_RESET_FILE,
     RLM_SCHEMA_MODE_ADDITIVE_DISCOVERED,
     RLM_SCHEMA_MODE_ADDITIVE_EXPLICIT,
     RLM_SCHEMA_MODE_MANUAL,
@@ -112,6 +126,19 @@ typedef enum realm_schema_validation_mode {
     RLM_SCHEMA_VALIDATION_REJECT_EMBEDDED_ORPHANS = 2
 } realm_schema_validation_mode_e;
 
+/**
+ * Represents a view over a UTF-8 string buffer. The buffer is unowned by this struct.
+ *
+ * This string can have three states:
+ * - null
+ *   When the data member is NULL.
+ * - empty
+ *   When the data member is non-NULL, and the size member is 0. The actual contents of the data member in this case
+ * don't matter.
+ * - non-empty
+ *   When the data member is non-NULL, and the size member is greater than 0.
+ *
+ */
 typedef struct realm_string {
     const char* data;
     size_t size;
@@ -163,6 +190,23 @@ typedef struct realm_value {
     } RLM_ANON_UNION_MEMBER(values);
     realm_value_type_e type;
 } realm_value_t;
+typedef struct realm_key_path_elem {
+    realm_class_key_t object;
+    realm_property_key_t property;
+} realm_key_path_elem_t;
+typedef struct realm_key_path {
+    size_t nb_elements;
+    realm_key_path_elem_t* path_elements;
+} realm_key_path_t;
+typedef struct realm_key_path_array {
+    size_t nb_elements;
+    realm_key_path_t* paths;
+} realm_key_path_array_t;
+typedef struct realm_query_arg {
+    size_t nb_args;
+    bool is_list;
+    realm_value_t* arg;
+} realm_query_arg_t;
 
 typedef struct realm_version_id {
     uint64_t version;
@@ -216,6 +260,12 @@ typedef enum realm_errno {
     RLM_ERR_INVALID_QUERY_STRING,
     RLM_ERR_INVALID_QUERY,
 
+    RLM_ERR_FILE_ACCESS_ERROR,
+    RLM_ERR_FILE_PERMISSION_DENIED,
+
+    RLM_ERR_DELETE_OPENED_REALM,
+    RLM_ERR_ILLEGAL_OPERATION,
+
     RLM_ERR_CALLBACK = 1000000, /**< A user-provided callback failed. */
 } realm_errno_e;
 
@@ -228,6 +278,9 @@ typedef enum realm_logic_error_kind {
 typedef struct realm_error {
     realm_errno_e error;
     const char* message;
+    // When error is RLM_ERR_CALLBACK this is an opaque pointer to an SDK-owned error object
+    // thrown by user code inside a callback with realm_register_user_code_callback_error(), otherwise null.
+    void* usercode_error;
     union {
         int code;
         realm_logic_error_kind_e logic_error_kind;
@@ -297,6 +350,8 @@ typedef struct realm_class_info {
 typedef enum realm_class_flags {
     RLM_CLASS_NORMAL = 0,
     RLM_CLASS_EMBEDDED = 1,
+    RLM_CLASS_ASYMMETRIC = 2,
+    RLM_CLASS_MASK = 3,
 } realm_class_flags_e;
 
 typedef enum realm_property_flags {
@@ -309,27 +364,32 @@ typedef enum realm_property_flags {
 
 /* Notification types */
 typedef struct realm_notification_token realm_notification_token_t;
+typedef struct realm_callback_token realm_callback_token_t;
+typedef struct realm_refresh_callback_token realm_refresh_callback_token_t;
 typedef struct realm_object_changes realm_object_changes_t;
 typedef struct realm_collection_changes realm_collection_changes_t;
-typedef void (*realm_on_object_change_func_t)(void* userdata, const realm_object_changes_t*);
-typedef void (*realm_on_collection_change_func_t)(void* userdata, const realm_collection_changes_t*);
-typedef void (*realm_callback_error_func_t)(void* userdata, const realm_async_error_t*);
+typedef void (*realm_on_object_change_func_t)(realm_userdata_t userdata, const realm_object_changes_t*);
+typedef void (*realm_on_collection_change_func_t)(realm_userdata_t userdata, const realm_collection_changes_t*);
+typedef void (*realm_on_realm_change_func_t)(realm_userdata_t userdata);
+typedef void (*realm_on_realm_refresh_func_t)(realm_userdata_t userdata);
+typedef void (*realm_async_begin_write_func_t)(realm_userdata_t userdata);
+typedef void (*realm_async_commit_func_t)(realm_userdata_t userdata, bool error, const char* desc);
+
+/**
+ * Callback for realm schema changed notifications.
+ *
+ * @param new_schema The new schema. This object is released after the callback returns.
+ *                   Preserve it with realm_clone() if you wish to keep it around for longer.
+ */
+typedef void (*realm_on_schema_change_func_t)(realm_userdata_t userdata, const realm_schema_t* new_schema);
 
 /* Scheduler types */
-typedef void (*realm_scheduler_notify_func_t)(void* userdata);
-typedef bool (*realm_scheduler_is_on_thread_func_t)(void* userdata);
-typedef bool (*realm_scheduler_is_same_as_func_t)(const void* userdata1, const void* userdata2);
-typedef bool (*realm_scheduler_can_deliver_notifications_func_t)(void* userdata);
-typedef void (*realm_scheduler_set_notify_callback_func_t)(void* userdata, void* callback_userdata,
-                                                           realm_free_userdata_func_t, realm_scheduler_notify_func_t);
-typedef realm_scheduler_t* (*realm_scheduler_default_factory_func_t)(void* userdata);
-
-/* Sync types */
-typedef void (*realm_sync_upload_completion_func_t)(void* userdata, realm_async_error_t*);
-typedef void (*realm_sync_download_completion_func_t)(void* userdata, realm_async_error_t*);
-typedef void (*realm_sync_connection_state_changed_func_t)(void* userdata, int, int);
-typedef void (*realm_sync_session_state_changed_func_t)(void* userdata, int, int);
-typedef void (*realm_sync_progress_func_t)(void* userdata, size_t transferred, size_t total);
+typedef void (*realm_scheduler_notify_func_t)(realm_userdata_t userdata);
+typedef bool (*realm_scheduler_is_on_thread_func_t)(realm_userdata_t userdata);
+typedef bool (*realm_scheduler_is_same_as_func_t)(const realm_userdata_t scheduler_userdata_1,
+                                                  const realm_userdata_t scheduler_userdata_2);
+typedef bool (*realm_scheduler_can_deliver_notifications_func_t)(realm_userdata_t userdata);
+typedef realm_scheduler_t* (*realm_scheduler_default_factory_func_t)(realm_userdata_t userdata);
 
 /**
  * Get the VersionID of the current transaction.
@@ -408,16 +468,6 @@ RLM_API realm_async_error_t* realm_get_last_error_as_async_error(void);
 
 #if defined(__cplusplus)
 /**
- * Rethrow the last exception.
- *
- * Note: This function does not have C linkage, because throwing across language
- * boundaries is undefined behavior. When called from C code, this should result
- * in a linker error. When called from C++, `std::rethrow_exception` will be
- * called to propagate the exception unchanged.
- */
-RLM_EXPORT void realm_rethrow_last_error(void);
-
-/**
  * Invoke a function that may throw an exception, and report that exception as
  * part of the C API error handling mechanism.
  *
@@ -437,6 +487,15 @@ RLM_EXPORT bool realm_wrap_exceptions(void (*)()) noexcept;
  * @return True if an error was cleared.
  */
 RLM_API bool realm_clear_last_error(void);
+
+/**
+ * Free memory allocated by the module this library was linked into.
+ *
+ * This is needed for raw memory buffers such as string copies or arrays
+ * returned from a library function. Realm C Wrapper objects on the other hand
+ * should always be freed with realm_release() only.
+ */
+RLM_API void realm_free(void* buffer);
 
 /**
  * Free any Realm C Wrapper object.
@@ -620,7 +679,8 @@ RLM_API void realm_config_set_schema_mode(realm_config_t*, realm_schema_mode_e);
  *
  * This function cannot fail.
  */
-RLM_API void realm_config_set_migration_function(realm_config_t*, realm_migration_func_t, void* userdata);
+RLM_API void realm_config_set_migration_function(realm_config_t*, realm_migration_func_t, realm_userdata_t userdata,
+                                                 realm_free_userdata_func_t userdata_free);
 
 /**
  * Set the data initialization function.
@@ -633,7 +693,8 @@ RLM_API void realm_config_set_migration_function(realm_config_t*, realm_migratio
  * This function cannot fail.
  */
 RLM_API void realm_config_set_data_initialization_function(realm_config_t*, realm_data_initialization_func_t,
-                                                           void* userdata);
+                                                           realm_userdata_t userdata,
+                                                           realm_free_userdata_func_t userdata_free);
 
 /**
  * Set the should-compact-on-launch callback.
@@ -647,7 +708,8 @@ RLM_API void realm_config_set_data_initialization_function(realm_config_t*, real
  */
 RLM_API void realm_config_set_should_compact_on_launch_function(realm_config_t*,
                                                                 realm_should_compact_on_launch_func_t,
-                                                                void* userdata);
+                                                                realm_userdata_t userdata,
+                                                                realm_free_userdata_func_t userdata_free);
 
 /**
  * True if file format upgrades on open are disabled.
@@ -733,28 +795,69 @@ RLM_API uint64_t realm_config_get_max_number_of_active_versions(const realm_conf
 RLM_API void realm_config_set_max_number_of_active_versions(realm_config_t*, uint64_t);
 
 /**
+ * Configure realm to be in memory
+ */
+RLM_API void realm_config_set_in_memory(realm_config_t*, bool) RLM_API_NOEXCEPT;
+
+/**
+ * Check if realm is configured in memory
+ */
+RLM_API bool realm_config_get_in_memory(realm_config_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Set FIFO path
+ */
+RLM_API void realm_config_set_fifo_path(realm_config_t*, const char*);
+
+/**
+ Check realm FIFO path
+ */
+RLM_API const char* realm_config_get_fifo_path(realm_config_t*) RLM_API_NOEXCEPT;
+
+/**
+ * If 'cached' is false, always return a new Realm instance.
+ */
+RLM_API void realm_config_set_cached(realm_config_t*, bool cached) RLM_API_NOEXCEPT;
+
+/**
+ * Check if realms are cached
+ */
+RLM_API bool realm_config_get_cached(realm_config_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Allow realm to manage automatically embedded objects when a migration from TopLevel to Embedded takes place.
+ */
+RLM_API void realm_config_set_automatic_backlink_handling(realm_config_t*, bool) RLM_API_NOEXCEPT;
+
+/**
  * Create a custom scheduler object from callback functions.
  *
- * @param userdata Pointer passed to all callbacks.
- * @param notify Function to trigger a call to the registered callback on the
- *               scheduler's event loop. This function must be thread-safe, or
- *               NULL, in which case the scheduler is considered unable to
- *               deliver notifications.
+ * @param notify Function which will be called whenever the scheduler has work
+ *               to do. Each call to this should trigger a call to
+ *               `realm_scheduler_perform_work()` from within the scheduler's
+ *               event loop. This function must be thread-safe, or NULL, in
+ *               which case the scheduler is considered unable to deliver
+ *               notifications.
  * @param is_on_thread Function to return true if called from the same thread as
  *                     the scheduler. This function must be thread-safe.
  * @param can_deliver_notifications Function to return true if the scheduler can
  *                                  support `notify()`. This function does not
  *                                  need to be thread-safe.
- * @param set_notify_callback Function to accept a callback that will be invoked
- *                            by `notify()` on the scheduler's event loop. This
- *                            function does not need to be thread-safe.
  */
 RLM_API realm_scheduler_t*
-realm_scheduler_new(void* userdata, realm_free_userdata_func_t, realm_scheduler_notify_func_t notify,
-                    realm_scheduler_is_on_thread_func_t is_on_thread, realm_scheduler_is_same_as_func_t is_same_as,
-                    realm_scheduler_can_deliver_notifications_func_t can_deliver_notifications,
-                    realm_scheduler_set_notify_callback_func_t set_notify_callback);
+realm_scheduler_new(realm_userdata_t userdata, realm_free_userdata_func_t userdata_free,
+                    realm_scheduler_notify_func_t notify, realm_scheduler_is_on_thread_func_t is_on_thread,
+                    realm_scheduler_is_same_as_func_t is_same_as,
+                    realm_scheduler_can_deliver_notifications_func_t can_deliver_notifications);
 
+/**
+ * Performs all of the pending work for the given scheduler.
+ *
+ * This function must be called from within the scheduler's event loop. It must
+ * be called each time the notify callback passed to the scheduler
+ * is invoked.
+ */
+RLM_API void realm_scheduler_perform_work(realm_scheduler_t*);
 /**
  * Create an instance of the default scheduler for the current platform,
  * normally confined to the calling thread.
@@ -793,42 +896,8 @@ RLM_API bool realm_scheduler_has_default_factory(void);
  *
  * This function is thread-safe, but should generally only be called once.
  */
-RLM_API bool realm_scheduler_set_default_factory(void* userdata, realm_free_userdata_func_t,
+RLM_API bool realm_scheduler_set_default_factory(realm_userdata_t userdata, realm_free_userdata_func_t userdata_free,
                                                  realm_scheduler_default_factory_func_t);
-
-/**
- * Trigger a call to the registered notifier callback on the scheduler's event loop.
- *
- * This function is thread-safe.
- */
-RLM_API void realm_scheduler_notify(realm_scheduler_t*);
-
-/**
- * Returns true if the caller is currently running on the scheduler's thread.
- *
- * This function is thread-safe.
- */
-RLM_API bool realm_scheduler_is_on_thread(const realm_scheduler_t*);
-
-/**
- * Returns true if the scheduler is able to deliver notifications.
- *
- * A false return value may indicate that notifications are not applicable for
- * the scheduler, not implementable, or a temporary inability to deliver
- * notifications.
- *
- * This function is not thread-safe.
- */
-RLM_API bool realm_scheduler_can_deliver_notifications(const realm_scheduler_t*);
-
-/**
- * Set the callback that will be invoked by `realm_scheduler_notify()`.
- *
- * This function is not thread-safe.
- */
-RLM_API bool realm_scheduler_set_notify_callback(realm_scheduler_t*, void* userdata, realm_free_userdata_func_t,
-                                                 realm_scheduler_notify_func_t);
-
 
 /**
  * Open a Realm file.
@@ -839,6 +908,73 @@ RLM_API bool realm_scheduler_set_notify_callback(realm_scheduler_t*, void* userd
  * @return If successful, the Realm object. Otherwise, NULL.
  */
 RLM_API realm_t* realm_open(const realm_config_t* config);
+
+/**
+ * The overloaded Realm::convert function offers a way to copy and/or convert a realm.
+ *
+ * The following options are supported:
+ * - local -> local (config or path)
+ * - local -> sync (config only)
+ * - sync -> local (config only)
+ * - sync -> sync  (config or path)
+ * - sync -> bundlable sync (client file identifier removed)
+ *
+ * Note that for bundled realms it is required that all local changes are synchronized with the
+ * server before the copy can be written. This is to be sure that the file can be used as a
+ * stating point for a newly installed application. The function will throw if there are
+ * pending uploads.
+ */
+/**
+ * Copy or convert a Realm using a config.
+ *
+ * If the file already exists and merge_with_existing is true, data will be copied over object per object.
+ * When merging, all classes must have a pk called '_id" otherwise an exception is thrown.
+ * If the file exists and merge_with_existing is false, an exception is thrown.
+ * If the file does not exist, the realm file will be exported to the new location and if the
+ * configuration object contains a sync part, a sync history will be synthesized.
+ *
+ * @param config The realm configuration that should be used to create a copy.
+ *               This can be a local or a synced Realm, encrypted or not.
+ * @param merge_with_existing If this is true and the destination file exists, data will be copied over object by
+ * object. Otherwise, if this is false and the destination file exists, an exception is thrown.
+ */
+RLM_API bool realm_convert_with_config(const realm_t* realm, const realm_config_t* config, bool merge_with_existing);
+/**
+ * Copy a Realm using a path.
+ *
+ * @param path The path the realm should be copied to. Local realms will remain local, synced
+ *             realms will remain synced realms.
+ * @param encryption_key The optional encryption key for the new realm.
+ * @param merge_with_existing If this is true and the destination file exists, data will be copied over object by
+ object.
+ *  Otherwise, if this is false and the destination file exists, an exception is thrown.
+
+ */
+RLM_API bool realm_convert_with_path(const realm_t* realm, const char* path, realm_binary_t encryption_key,
+                                     bool merge_with_existing);
+
+/**
+ * Deletes the following files for the given `realm_file_path` if they exist:
+ * - the Realm file itself
+ * - the .management folder
+ * - the .note file
+ * - the .log file
+ *
+ * The .lock file for this Realm cannot and will not be deleted as this is unsafe.
+ * If a different process / thread is accessing the Realm at the same time a corrupt state
+ * could be the result and checking for a single process state is not possible here.
+ *
+ * @param realm_file_path The path to the Realm file. All files will be derived from this.
+ * @param[out] did_delete_realm If non-null, set to true if the primary Realm file was deleted.
+ *                              Discard value if the function returns an error.
+ *
+ * @return true if no error occurred.
+ *
+ * @throws RLM_ERR_FILE_PERMISSION_DENIED if the operation was not permitted.
+ * @throws RLM_ERR_FILE_ACCESS_ERROR for any other error while trying to delete the file or folder.
+ * @throws RLM_ERR_DELETE_OPENED_REALM if the function was called on an open Realm.
+ */
+RLM_API bool realm_delete_files(const char* realm_file_path, bool* did_delete_realm);
 
 /**
  * Create a `realm_t` object from a thread-safe reference to the same realm.
@@ -932,6 +1068,46 @@ RLM_API bool realm_commit(realm_t*);
 RLM_API bool realm_rollback(realm_t*);
 
 /**
+ * start a new write transaction asynchronously for the realm passed as argument.
+ */
+RLM_API unsigned int realm_async_begin_write(realm_t* realm, realm_async_begin_write_func_t,
+                                             realm_userdata_t userdata, realm_free_userdata_func_t userdata_free,
+                                             bool notify_only);
+
+/**
+ * commit a transaction asynchronously for the realm passed as argument.
+ */
+RLM_API unsigned int realm_async_commit(realm_t* realm, realm_async_commit_func_t, realm_userdata_t userdata,
+                                        realm_free_userdata_func_t userdata_free, bool allow_grouping);
+
+/**
+ * Cancel the transaction referenced by the token passed as argument and set the optional boolean flag in order to
+ * inform the caller if the transaction was cancelled.
+ */
+RLM_API bool realm_async_cancel(realm_t* realm, unsigned int token, bool* cancelled);
+
+/**
+ * Add a callback that will be invoked every time the view of this file is updated.
+ *
+ * This callback is guaranteed to be invoked before any object or collection change
+ * notifications for this realm are delivered.
+ *
+ * @return a registration token used to remove the callback.
+ */
+RLM_API realm_callback_token_t* realm_add_realm_changed_callback(realm_t*, realm_on_realm_change_func_t,
+                                                                 realm_userdata_t userdata,
+                                                                 realm_free_userdata_func_t userdata_free);
+
+/**
+ * Add a callback that will be invoked the first time that the given realm is refreshed to the version which is the
+ * latest version at the time when this is called.
+ * @return a refresh token to remove the callback
+ */
+RLM_API realm_refresh_callback_token_t* realm_add_realm_refresh_callback(realm_t*, realm_on_realm_refresh_func_t,
+                                                                         realm_userdata_t userdata,
+                                                                         realm_free_userdata_func_t userdata_free);
+
+/**
  * Refresh the view of the realm file.
  *
  * If another process or thread has made changes to the realm file, this causes
@@ -949,7 +1125,7 @@ RLM_API bool realm_refresh(realm_t*);
  *
  * @return A non-NULL realm instance representing the frozen state.
  */
-RLM_API realm_t* realm_freeze(realm_t*);
+RLM_API realm_t* realm_freeze(const realm_t*);
 
 /**
  * Vacuum the free space from the realm file, reducing its file size.
@@ -982,6 +1158,13 @@ RLM_API realm_schema_t* realm_schema_new(const realm_class_info_t* classes, size
 RLM_API realm_schema_t* realm_get_schema(const realm_t*);
 
 /**
+ * Get the schema version for this realm.
+ *
+ * This function cannot fail.
+ */
+RLM_API uint64_t realm_get_schema_version(const realm_t* realm);
+
+/**
  * Update the schema of an open realm.
  *
  * This is equivalent to calling `realm_update_schema_advanced(realm, schema, 0,
@@ -1010,9 +1193,21 @@ RLM_API bool realm_update_schema(realm_t* realm, const realm_schema_t* schema);
  *                          migration in its own write transaction.
  */
 RLM_API bool realm_update_schema_advanced(realm_t* realm, const realm_schema_t* schema, uint64_t version,
-                                          realm_migration_func_t migration_func, void* migration_func_userdata,
+                                          realm_migration_func_t migration_func,
+                                          realm_userdata_t migration_func_userdata,
                                           realm_data_initialization_func_t data_init_func,
-                                          void* data_init_func_userdata, bool is_in_transaction);
+                                          realm_userdata_t data_init_func_userdata, bool is_in_transaction);
+
+/**
+ *  Rename a property for the schame  of the open realm.
+ *  @param realm The realm for which the property schema has to be renamed
+ *  @param schema The schema to modifies
+ *  @param object_type type of the object to modify
+ *  @param old_name old name of the property
+ *  @param new_name new name of the property
+ */
+RLM_API bool realm_schema_rename_property(realm_t* realm, realm_schema_t* schema, const char* object_type,
+                                          const char* old_name, const char* new_name);
 
 /**
  * Get the `realm::Schema*` pointer for this realm.
@@ -1022,6 +1217,16 @@ RLM_API bool realm_update_schema_advanced(realm_t* realm, const realm_schema_t* 
  * The returned value is owned by the `realm_t` instance, and must not be freed.
  */
 RLM_API const void* _realm_get_schema_native(const realm_t*);
+
+/**
+ * Add a callback that will be invoked every time the schema of this realm is changed.
+ *
+ * @return a registration token used to remove the callback.
+ */
+RLM_API realm_callback_token_t* realm_add_schema_changed_callback(realm_t*, realm_on_schema_change_func_t,
+                                                                  realm_userdata_t userdata,
+                                                                  realm_free_userdata_func_t userdata_free);
+
 
 /**
  * Validate the schema.
@@ -1044,10 +1249,12 @@ RLM_API size_t realm_get_num_classes(const realm_t*);
 
 /**
  * Get the table keys for classes in the schema.
+ * In case of errors this function will return false (errors to be fetched via `realm_get_last_error()`).
+ * If data is not copied the function will return true and set  `out_n` with the capacity needed.
+ * Data is only copied if the input array has enough capacity, otherwise the needed  array capacity will be set.
  *
  * @param out_keys An array that will contain the keys of each class in the
- *                 schema. May be NULL, in which case `out_n` can be used to
- *                 determine the number of classes in the schema.
+ *                 schema. Array may be NULL, in this case no data will be copied and `out_n` set if not NULL.
  * @param max The maximum number of keys to write to `out_keys`.
  * @param out_n The actual number of classes. May be NULL.
  * @return True if no exception occurred.
@@ -1082,15 +1289,14 @@ RLM_API bool realm_get_class(const realm_t*, realm_class_key_t key, realm_class_
 
 /**
  * Get the list of properties for the class with this @a key.
+ * In case of errors this function will return false (errors to be fetched via `realm_get_last_error()`).
+ * If data is not copied the function will return true and set  `out_n` with the capacity needed.
+ * Data is only copied if the input array has enough capacity, otherwise the needed  array capacity will be set.
  *
- * @param out_properties A pointer to an array of `realm_property_info_t`, which
+ * @param out_properties  A pointer to an array of `realm_property_info_t`, which
  *                       will be populated with the information about the
- *                       properties. To see all properties, the length of the
- *                       array should be at least the number of properties in
- *                       the class, as reported in the sum of persisted and
- *                       computed properties for the class. May be NULL, in
- *                       which case this function can be used to discover the
- *                       number of properties in the class.
+ *                       properties.  Array may be NULL, in this case no data will be copied and `out_n` set if not
+ * NULL.
  * @param max The maximum number of entries to write to `out_properties`.
  * @param out_n The actual number of properties written to `out_properties`.
  * @return True if no exception occurred.
@@ -1100,19 +1306,21 @@ RLM_API bool realm_get_class_properties(const realm_t*, realm_class_key_t key, r
 
 /**
  * Get the property keys for the class with this @a key.
+ * In case of errors this function will return false (errors to be fetched via `realm_get_last_error()`).
+ * If data is not copied the function will return true and set  `out_n` with the capacity needed.
+ * Data is only copied if the input array has enough capacity, otherwise the needed  array capacity will be set.
  *
  * @param key The class key.
- * @param out_col_keys An array of property keys. May be NULL, in which case
- *                     this function can be used to discover the number of
- *                     properties for this class.
+ * @param out_col_keys An array of property keys. Array may be NULL,
+ *                     in this case no data will be copied and `out_n` set if not NULL.
  * @param max The maximum number of keys to write to `out_col_keys`. Ignored if
  *            `out_col_keys == NULL`.
  * @param out_n The actual number of properties written to `out_col_keys` (if
  *              non-NULL), or number of properties in the class.
+ * @return True if no exception occurred.
  **/
 RLM_API bool realm_get_property_keys(const realm_t*, realm_class_key_t key, realm_property_key_t* out_col_keys,
                                      size_t max, size_t* out_n);
-
 
 /**
  * Find a property by its column key.
@@ -1228,11 +1436,21 @@ RLM_API realm_results_t* realm_object_find_all(const realm_t*, realm_class_key_t
 RLM_API realm_object_t* realm_object_create(realm_t*, realm_class_key_t);
 
 /**
- * Create an object in a class with a primary key.
+ * Create an object in a class with a primary key. Will not succeed if an
+ * object with the given primary key value already exists.
  *
  * @return A non-NULL pointer if the object was created successfully.
  */
 RLM_API realm_object_t* realm_object_create_with_primary_key(realm_t*, realm_class_key_t, realm_value_t pk);
+
+/**
+ * Create an object in a class with a primary key. If an object with the given
+ * primary key value already exists, that object will be returned.
+ *
+ * @return A non-NULL pointer if the object was found/created successfully.
+ */
+RLM_API realm_object_t* realm_object_get_or_create_with_primary_key(realm_t*, realm_class_key_t, realm_value_t pk,
+                                                                    bool* did_create);
 
 /**
  * Delete a realm object.
@@ -1242,6 +1460,28 @@ RLM_API realm_object_t* realm_object_create_with_primary_key(realm_t*, realm_cla
  * @return True if no exception occurred.
  */
 RLM_API bool realm_object_delete(realm_object_t*);
+
+/**
+ * Resolve the Realm object in the provided Realm.
+ *
+ * This is equivalent to producing a thread-safe reference and resolving it in the target realm.
+ *
+ * If the object can be resolved in the target realm, '*resolved' points to the new object
+ * If the object cannot be resolved in the target realm, '*resolved' will be null.
+ * @return True if no exception occurred (except exceptions that may normally occur if resolution fails)
+ */
+RLM_API bool realm_object_resolve_in(const realm_object_t* live_object, const realm_t* target_realm,
+                                     realm_object_t** resolved);
+
+/**
+ * Increment atomically property specified as parameter by value, for the object passed as argument.
+ * @param object valid ptr to an object store in the database
+ * @param property_key id of the property to change
+ * @param value increment for the property passed as argument
+ * @return True if not exception occurred.
+ */
+RLM_API bool realm_object_add_int(realm_object_t* object, realm_property_key_t property_key, int64_t value);
+
 
 RLM_API realm_object_t* _realm_object_from_native_copy(const void* pobj, size_t n);
 RLM_API realm_object_t* _realm_object_from_native_move(void* pobj, size_t n);
@@ -1280,11 +1520,10 @@ RLM_API realm_link_t realm_object_as_link(const realm_object_t* object);
  *
  * @return A non-null pointer if no exception occurred.
  */
-RLM_API realm_notification_token_t* realm_object_add_notification_callback(realm_object_t*, void* userdata,
-                                                                           realm_free_userdata_func_t free,
-                                                                           realm_on_object_change_func_t on_change,
-                                                                           realm_callback_error_func_t on_error,
-                                                                           realm_scheduler_t*);
+RLM_API realm_notification_token_t* realm_object_add_notification_callback(realm_object_t*, realm_userdata_t userdata,
+                                                                           realm_free_userdata_func_t userdata_free,
+                                                                           realm_key_path_array_t*,
+                                                                           realm_on_object_change_func_t on_change);
 
 /**
  * Get an object from a thread-safe reference, potentially originating in a
@@ -1333,6 +1572,26 @@ RLM_API bool realm_get_values(const realm_object_t*, size_t num_values, const re
  * @return True if no exception occurred.
  */
 RLM_API bool realm_set_value(realm_object_t*, realm_property_key_t, realm_value_t new_value, bool is_default);
+
+/**
+ * Create an embedded object in a given property.
+ *
+ * @return A non-NULL pointer if the object was created successfully.
+ */
+RLM_API realm_object_t* realm_set_embedded(realm_object_t*, realm_property_key_t);
+
+/** Return the object linked by the given property
+ *
+ * @return A non-NULL pointer if an object is found.
+ */
+RLM_API realm_object_t* realm_get_linked_object(realm_object_t*, realm_property_key_t);
+
+/**
+ * Serializes an object to json and returns it as string. Serializes a single level of properties only.
+ *
+ * @return a json-serialized representation of the object.
+ */
+RLM_API char* realm_object_to_string(realm_object_t*);
 
 /**
  * Set the values for several properties.
@@ -1393,6 +1652,25 @@ RLM_API realm_list_t* _realm_list_from_native_copy(const void* plist, size_t n);
 RLM_API realm_list_t* _realm_list_from_native_move(void* plist, size_t n);
 
 /**
+ * Resolve the list in the context of a given Realm instance.
+ *
+ * This is equivalent to producing a thread-safe reference and resolving it in the frozen realm.
+ *
+ * If resolution is possible, a valid resolved object is produced at '*resolved*'.
+ * If resolution is not possible, but no error occurs, '*resolved' is set to NULL
+ *
+ * @return true if no error occurred.
+ */
+RLM_API bool realm_list_resolve_in(const realm_list_t* list, const realm_t* target_realm, realm_list_t** resolved);
+
+/**
+ * Check if a list is valid.
+ *
+ * @return True if the list is valid.
+ */
+RLM_API bool realm_list_is_valid(const realm_list_t*);
+
+/**
  * Get the size of a list, in number of elements.
  *
  * This function may fail if the object owning the list has been deleted.
@@ -1435,6 +1713,27 @@ RLM_API bool realm_list_set(realm_list_t*, size_t index, realm_value_t value);
 RLM_API bool realm_list_insert(realm_list_t*, size_t index, realm_value_t value);
 
 /**
+ * Insert an embedded object at a given position.
+ *
+ * @return A non-NULL pointer if the object was created successfully.
+ */
+RLM_API realm_object_t* realm_list_insert_embedded(realm_list_t*, size_t index);
+
+/**
+ * Create an embedded object at a given position.
+ *
+ * @return A non-NULL pointer if the object was created successfully.
+ */
+RLM_API realm_object_t* realm_list_set_embedded(realm_list_t*, size_t index);
+
+/**
+ * Get object identified at index
+ *
+ * @return A non-NULL pointer if value is an object.
+ */
+RLM_API realm_object_t* realm_list_get_linked_object(realm_list_t*, size_t index);
+
+/**
  * Erase the element at @a index.
  *
  * @return True if no exception occurred.
@@ -1472,11 +1771,10 @@ RLM_API bool realm_list_assign(realm_list_t*, const realm_value_t* values, size_
  *
  * @return A non-null pointer if no exception occurred.
  */
-RLM_API realm_notification_token_t* realm_list_add_notification_callback(realm_list_t*, void* userdata,
-                                                                         realm_free_userdata_func_t free,
-                                                                         realm_on_collection_change_func_t on_change,
-                                                                         realm_callback_error_func_t on_error,
-                                                                         realm_scheduler_t*);
+RLM_API realm_notification_token_t* realm_list_add_notification_callback(realm_list_t*, realm_userdata_t userdata,
+                                                                         realm_free_userdata_func_t userdata_free,
+                                                                         realm_key_path_array_t*,
+                                                                         realm_on_collection_change_func_t on_change);
 
 /**
  * Get an list from a thread-safe reference, potentially originating in a
@@ -1597,39 +1895,337 @@ RLM_API void realm_collection_changes_get_ranges(
     realm_index_range_t* out_modification_ranges_after, size_t max_modification_ranges_after,
     realm_collection_move_t* out_moves, size_t max_moves);
 
+/**
+ * Get a set instance for the property of an object.
+ *
+ * Note: It is up to the caller to call `realm_release()` on the returned set.
+ *
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_set_t* realm_get_set(realm_object_t*, realm_property_key_t);
+
+/**
+ * Create a `realm_set_t` from a pointer to a `realm::object_store::Set`,
+ * copy-constructing the internal representation.
+ *
+ * @param pset A pointer to an instance of `realm::object_store::Set`.
+ * @param n Must be equal to `sizeof(realm::object_store::Set)`.
+ * @return A non-null pointer if no exception occurred.
+ */
 RLM_API realm_set_t* _realm_set_from_native_copy(const void* pset, size_t n);
+
+/**
+ * Create a `realm_set_t` from a pointer to a `realm::object_store::Set`,
+ * move-constructing the internal representation.
+ *
+ * @param pset A pointer to an instance of `realm::object_store::Set`.
+ * @param n Must be equal to `sizeof(realm::object_store::Set)`.
+ * @return A non-null pointer if no exception occurred.
+ */
 RLM_API realm_set_t* _realm_set_from_native_move(void* pset, size_t n);
-RLM_API realm_set_t* realm_get_set(const realm_object_t*, realm_property_key_t);
-RLM_API size_t realm_set_size(const realm_set_t*);
+
+/**
+ * Resolve the set in the context of a given Realm instance.
+ *
+ * This is equivalent to producing a thread-safe reference and resolving it in the frozen realm.
+ *
+ * If resolution is possible, a valid resolved object is produced at '*resolved*'.
+ * If resolution is not possible, but no error occurs, '*resolved' is set to NULL
+ *
+ * @return true if no error occurred.
+ */
+RLM_API bool realm_set_resolve_in(const realm_set_t* list, const realm_t* target_realm, realm_set_t** resolved);
+
+/**
+ * Check if a set is valid.
+ *
+ * @return True if the set is valid.
+ */
+RLM_API bool realm_set_is_valid(const realm_set_t*);
+
+/**
+ * Get the size of a set, in number of unique elements.
+ *
+ * This function may fail if the object owning the set has been deleted.
+ *
+ * @param out_size Where to put the set size. May be NULL.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_set_size(const realm_set_t*, size_t* out_size);
+
+/**
+ * Get the property that this set came from.
+ *
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_set_get_property(const realm_set_t*, realm_property_info_t* out_property_info);
+
+/**
+ * Get the value at @a index.
+ *
+ * Note that elements in a set move around arbitrarily when other elements are
+ * inserted/removed.
+ *
+ * @param out_value The resulting value, if no error occurred. May be NULL,
+ *                  though nonsensical.
+ * @return True if no exception occurred.
+ */
 RLM_API bool realm_set_get(const realm_set_t*, size_t index, realm_value_t* out_value);
-RLM_API bool realm_set_find(const realm_set_t*, realm_value_t value, size_t* out_index);
-RLM_API bool realm_set_insert(realm_set_t*, realm_value_t value, size_t out_index);
+
+/**
+ * Find an element in a set.
+ *
+ * If @a value has a type that is incompatible with the set, it will be reported
+ * as not existing in the set.
+ *
+ * @param value The value to look for in the set.
+ * @param out_index If non-null, and the element is found, this will be
+ *                  populated with the index of the found element in the set.
+ * @param out_found If non-null, will be set to true if the element was found,
+ *                  otherwise will be set to false.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_set_find(const realm_set_t*, realm_value_t value, size_t* out_index, bool* out_found);
+
+/**
+ * Insert an element in a set.
+ *
+ * If the element is already in the set, this function does nothing (and does
+ * not report an error).
+ *
+ * @param value The value to insert.
+ * @param out_index If non-null, will be set to the index of the inserted
+ *                  element, or the index of the existing element.
+ * @param out_inserted If non-null, will be set to true if the element did not
+ *                     already exist in the set. Otherwise set to false.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_set_insert(realm_set_t*, realm_value_t value, size_t* out_index, bool* out_inserted);
+
+/**
+ * Erase an element from a set.
+ *
+ * If the element does not exist in the set, this function does nothing (and
+ * does not report an error).
+ *
+ * @param value The value to erase.
+ * @param out_erased If non-null, will be set to true if the element was found
+ *                   and erased, and otherwise set to false.
+ * @return True if no exception occurred.
+ */
 RLM_API bool realm_set_erase(realm_set_t*, realm_value_t value, bool* out_erased);
+
+/**
+ * Clear a set of values.
+ *
+ * @return True if no exception occurred.
+ */
 RLM_API bool realm_set_clear(realm_set_t*);
-RLM_API bool realm_set_assign(realm_set_t*, realm_value_t values, size_t num_values);
-RLM_API realm_notification_token_t* realm_set_add_notification_callback(realm_object_t*, void* userdata,
-                                                                        realm_free_userdata_func_t free,
-                                                                        realm_on_collection_change_func_t on_change,
-                                                                        realm_callback_error_func_t on_error,
-                                                                        realm_scheduler_t*);
 
+/**
+ * In a set of objects, delete all objects in the set and clear the set. In a
+ * set of values, clear the set.
+ *
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_set_remove_all(realm_set_t*);
 
+/**
+ * Replace the contents of a set with values.
+ *
+ * The provided values may contain duplicates, in which case the size of the set
+ * after calling this function will be less than @a num_values.
+ *
+ * @param values The list of values to insert.
+ * @param num_values The number of elements.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_set_assign(realm_set_t*, const realm_value_t* values, size_t num_values);
+
+/**
+ * Subscribe to notifications for this object.
+ *
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_notification_token_t* realm_set_add_notification_callback(realm_set_t*, realm_userdata_t userdata,
+                                                                        realm_free_userdata_func_t userdata_free,
+                                                                        realm_key_path_array_t*,
+                                                                        realm_on_collection_change_func_t on_change);
+/**
+ * Get an set from a thread-safe reference, potentially originating in a
+ * different `realm_t` instance
+ */
+RLM_API realm_set_t* realm_set_from_thread_safe_reference(const realm_t*, realm_thread_safe_reference_t*);
+
+/**
+ * Get a dictionary instance for the property of an object.
+ *
+ * Note: It is up to the caller to call `realm_release()` on the returned dictionary.
+ *
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_dictionary_t* realm_get_dictionary(realm_object_t*, realm_property_key_t);
+
+/**
+ * Create a `realm_dictionary_t` from a pointer to a `realm::object_store::Dictionary`,
+ * copy-constructing the internal representation.
+ *
+ * @param pdict A pointer to an instance of `realm::object_store::Dictionary`.
+ * @param n Must be equal to `sizeof(realm::object_store::Dictionary)`.
+ * @return A non-null pointer if no exception occurred.
+ */
 RLM_API realm_dictionary_t* _realm_dictionary_from_native_copy(const void* pdict, size_t n);
+
+/**
+ * Create a `realm_dictionary_t` from a pointer to a `realm::object_store::Dictionary`,
+ * move-constructing the internal representation.
+ *
+ * @param pdict A pointer to an instance of `realm::object_store::Dictionary`.
+ * @param n Must be equal to `sizeof(realm::object_store::Dictionary)`.
+ * @return A non-null pointer if no exception occurred.
+ */
 RLM_API realm_dictionary_t* _realm_dictionary_from_native_move(void* pdict, size_t n);
-RLM_API realm_dictionary_t* realm_get_dictionary(const realm_object_t*, realm_property_key_t);
-RLM_API size_t realm_dictionary_size(const realm_dictionary_t*);
-RLM_API bool realm_dictionary_get(const realm_dictionary_t*, realm_value_t key, realm_value_t* out_value,
-                                  bool* out_found);
-RLM_API bool realm_dictionary_insert(realm_dictionary_t*, realm_value_t key, realm_value_t value, bool* out_inserted,
-                                     size_t* out_index);
+
+/**
+ * Resolve the list in the context of a given Realm instance.
+ *
+ * This is equivalent to producing a thread-safe reference and resolving it in the frozen realm.
+ *
+ * If resolution is possible, a valid resolved object is produced at '*resolved*'.
+ * If resolution is not possible, but no error occurs, '*resolved' is set to NULL
+ *
+ * @return true if no error occurred.
+ */
+RLM_API bool realm_dictionary_resolve_in(const realm_dictionary_t* list, const realm_t* target_realm,
+                                         realm_dictionary_t** resolved);
+
+/**
+ * Check if a list is valid.
+ *
+ * @return True if the list is valid.
+ */
+RLM_API bool realm_dictionary_is_valid(const realm_dictionary_t*);
+
+/**
+ * Get the size of a dictionary (the number of unique keys).
+ *
+ * This function may fail if the object owning the dictionary has been deleted.
+ *
+ * @param out_size Where to put the dictionary size. May be NULL.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_dictionary_size(const realm_dictionary_t*, size_t* out_size);
+
+
+/**
+ * Get the property that this dictionary came from.
+ *
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_dictionary_get_property(const realm_dictionary_t*, realm_property_info_t* out_info);
+
+/**
+ * Find an element in a dictionary.
+ *
+ * @param key The key to look for.
+ * @param out_value If non-null, the value for the corresponding key.
+ * @param out_found If non-null, will be set to true if the dictionary contained the key.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_dictionary_find(const realm_dictionary_t*, realm_value_t key, realm_value_t* out_value,
+                                   bool* out_found);
+
+/**
+ * Get the key-value pair at @a index.
+ *
+ * Note that the indices of elements in the dictionary move around as other
+ * elements are inserted/removed.
+ *
+ * @param index The index in the dictionary.
+ * @param out_key If non-null, will be set to the key at the corresponding index.
+ * @param out_value If non-null, will be set to the value at the corresponding index.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_dictionary_get(const realm_dictionary_t*, size_t index, realm_value_t* out_key,
+                                  realm_value_t* out_value);
+
+/**
+ * Insert or update an element in a dictionary.
+ *
+ * If the key already exists, the value will be overwritten.
+ *
+ * @param key The lookup key.
+ * @param value The value to insert.
+ * @param out_index If non-null, will be set to the index of the element after
+ *                  insertion/update.
+ * @param out_inserted If non-null, will be set to true if the key did not
+ *                     already exist.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_dictionary_insert(realm_dictionary_t*, realm_value_t key, realm_value_t value, size_t* out_index,
+                                     bool* out_inserted);
+
+/**
+ * Insert an embedded object.
+ *
+ * @return A non-NULL pointer if the object was created successfully.
+ */
+RLM_API realm_object_t* realm_dictionary_insert_embedded(realm_dictionary_t*, realm_value_t key);
+
+/**
+ * Get object identified by key
+ *
+ * @return A non-NULL pointer if the value associated with key is an object.
+ */
+RLM_API realm_object_t* realm_dictionary_get_linked_object(realm_dictionary_t*, realm_value_t key);
+
+/**
+ * Erase a dictionary element.
+ *
+ * @param key The key of the element to erase.
+ * @param out_erased If non-null, will be set to true if the element was found
+ *                   and erased.
+ * @return True if no exception occurred.
+ */
 RLM_API bool realm_dictionary_erase(realm_dictionary_t*, realm_value_t key, bool* out_erased);
+
+/**
+ * Clear a dictionary.
+ *
+ * @return True if no exception occurred.
+ */
 RLM_API bool realm_dictionary_clear(realm_dictionary_t*);
-typedef realm_value_t realm_key_value_pair_t[2];
-RLM_API bool realm_dictionary_assign(realm_dictionary_t*, const realm_key_value_pair_t* pairs, size_t num_pairs);
+
+/**
+ * Replace the contents of a dictionary with key/value pairs.
+ *
+ * The provided keys may contain duplicates, in which case the size of the
+ * dictionary after calling this function will be less than @a num_pairs.
+ *
+ * @param keys An array of keys of length @a num_pairs.
+ * @param values An array of values of length @a num_pairs.
+ * @param num_pairs The number of key-value pairs to assign.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_dictionary_assign(realm_dictionary_t*, size_t num_pairs, const realm_value_t* keys,
+                                     const realm_value_t* values);
+
+/**
+ * Subscribe to notifications for this object.
+ *
+ * @return A non-null pointer if no exception occurred.
+ */
 RLM_API realm_notification_token_t*
-realm_dictionary_add_notification_callback(realm_object_t*, void* userdata, realm_free_userdata_func_t free,
-                                           realm_on_collection_change_func_t on_change,
-                                           realm_callback_error_func_t on_error, realm_scheduler_t*);
+realm_dictionary_add_notification_callback(realm_dictionary_t*, realm_userdata_t userdata,
+                                           realm_free_userdata_func_t userdata_free, realm_key_path_array_t*,
+                                           realm_on_collection_change_func_t on_change);
+
+/**
+ * Get an dictionary from a thread-safe reference, potentially originating in a
+ * different `realm_t` instance
+ */
+RLM_API realm_dictionary_t* realm_dictionary_from_thread_safe_reference(const realm_t*,
+                                                                        realm_thread_safe_reference_t*);
 
 /**
  * Parse a query string and bind it to a table.
@@ -1647,7 +2243,34 @@ realm_dictionary_add_notification_callback(realm_object_t*, void* userdata, real
  *         exception occurred.
  */
 RLM_API realm_query_t* realm_query_parse(const realm_t*, realm_class_key_t target_table, const char* query_string,
-                                         size_t num_args, const realm_value_t* args);
+                                         size_t num_args, const realm_query_arg_t* args);
+
+
+/**
+ * Get textual representation of query
+ *
+ * @return a string containing the description. The string memory is managed by the query object.
+ */
+RLM_API const char* realm_query_get_description(realm_query_t*);
+
+
+/**
+ * Parse a query string and append it to an existing query via logical &&.
+ * The query string applies to the same table and Realm as the existing query.
+ *
+ * If the query failed to parse, the parser error is available from
+ * `realm_get_last_error()`.
+ *
+ * @param query_string A zero-terminated string in the Realm Query Language,
+ *                     optionally containing argument placeholders (`$0`, `$1`,
+ *                     etc.).
+ * @param num_args The number of arguments for this query.
+ * @param args A pointer to a list of argument values.
+ * @return A non-null pointer if the query was successfully parsed and no
+ *         exception occurred.
+ */
+RLM_API realm_query_t* realm_query_append_query(const realm_query_t*, const char* query_string, size_t num_args,
+                                                const realm_query_arg_t* args);
 
 /**
  * Parse a query string and bind it to a list.
@@ -1664,7 +2287,7 @@ RLM_API realm_query_t* realm_query_parse(const realm_t*, realm_class_key_t targe
  *         exception occurred.
  */
 RLM_API realm_query_t* realm_query_parse_for_list(const realm_list_t* target_list, const char* query_string,
-                                                  size_t num_args, const realm_value_t* args);
+                                                  size_t num_args, const realm_query_arg_t* args);
 
 /**
  * Parse a query string and bind it to another query result.
@@ -1682,7 +2305,7 @@ RLM_API realm_query_t* realm_query_parse_for_list(const realm_list_t* target_lis
  *         exception occurred.
  */
 RLM_API realm_query_t* realm_query_parse_for_results(const realm_results_t* target_results, const char* query_string,
-                                                     size_t num_args, const realm_value_t* args);
+                                                     size_t num_args, const realm_query_arg_t* args);
 
 /**
  * Count the number of objects found by this query.
@@ -1727,6 +2350,42 @@ RLM_API bool realm_query_delete_all(const realm_query_t*);
  * @return True if no exception occurred.
  */
 RLM_API bool realm_results_count(realm_results_t*, size_t* out_count);
+
+/**
+ * Create a new results object by further filtering existing result.
+ *
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_results_t* realm_results_filter(realm_results_t*, realm_query_t*);
+
+/**
+ * Create a new results object by further sorting existing result.
+ *
+ * @param sort_string Specifies a sort condition. It has the format
+          <param> ["," <param>]*
+          <param> ::= <prop> ["." <prop>]* <direction>,
+          <direction> ::= "ASCENDING" | "DESCENDING"
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_results_t* realm_results_sort(realm_results_t* results, const char* sort_string);
+
+/**
+ * Create a new results object by removing duplicates
+ *
+ * @param distinct_string Specifies a distinct condition. It has the format
+          <param> ["," <param>]*
+          <param> ::= <prop> ["." <prop>]*
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_results_t* realm_results_distinct(realm_results_t* results, const char* distinct_string);
+
+/**
+ * Create a new results object by limiting the number of items
+ *
+ * @param max_count Specifies the number of elements the new result can have at most
+ * @return A non-null pointer if no exception occurred.
+ */
+RLM_API realm_results_t* realm_results_limit(realm_results_t* results, size_t max_count);
 
 /**
  * Get the matching element at @a index in the results.
@@ -1781,9 +2440,13 @@ RLM_API bool realm_results_delete_all(realm_results_t*);
 RLM_API realm_results_t* realm_results_snapshot(const realm_results_t*);
 
 /**
- * Map the results into a frozen realm instance.
+ * Map the Results into a live Realm instance.
+ *
+ * This is equivalent to producing a thread-safe reference and resolving it in the live realm.
+ *
+ * @return A live copy of the Results.
  */
-RLM_API realm_results_t* realm_results_freeze(const realm_results_t*, const realm_t* frozen_realm);
+RLM_API realm_results_t* realm_results_resolve_in(realm_results_t* from_results, const realm_t* target_realm);
 
 /**
  * Compute the minimum value of a property in the results.
@@ -1824,16 +2487,1632 @@ RLM_API bool realm_results_sum(realm_results_t*, realm_property_key_t, realm_val
 RLM_API bool realm_results_average(realm_results_t*, realm_property_key_t, realm_value_t* out_average,
                                    bool* out_found);
 
-RLM_API realm_notification_token_t* realm_results_add_notification_callback(realm_results_t*, void* userdata,
-                                                                            realm_free_userdata_func_t,
-                                                                            realm_on_collection_change_func_t,
-                                                                            realm_callback_error_func_t,
-                                                                            realm_scheduler_t*);
+RLM_API realm_notification_token_t* realm_results_add_notification_callback(realm_results_t*,
+                                                                            realm_userdata_t userdata,
+                                                                            realm_free_userdata_func_t userdata_free,
+                                                                            realm_key_path_array_t*,
+                                                                            realm_on_collection_change_func_t);
 
 /**
  * Get an results object from a thread-safe reference, potentially originating
  * in a different `realm_t` instance
  */
 RLM_API realm_results_t* realm_results_from_thread_safe_reference(const realm_t*, realm_thread_safe_reference_t*);
+
+/* Logging */
+// equivalent to realm::util::Logger::Level in util/logger.hpp and must be kept in sync.
+typedef enum realm_log_level {
+    RLM_LOG_LEVEL_ALL = 0,
+    RLM_LOG_LEVEL_TRACE = 1,
+    RLM_LOG_LEVEL_DEBUG = 2,
+    RLM_LOG_LEVEL_DETAIL = 3,
+    RLM_LOG_LEVEL_INFO = 4,
+    RLM_LOG_LEVEL_WARNING = 5,
+    RLM_LOG_LEVEL_ERROR = 6,
+    RLM_LOG_LEVEL_FATAL = 7,
+    RLM_LOG_LEVEL_OFF = 8,
+} realm_log_level_e;
+
+typedef void (*realm_log_func_t)(realm_userdata_t userdata, realm_log_level_e level, const char* message);
+
+/* HTTP transport */
+typedef enum realm_http_request_method {
+    RLM_HTTP_REQUEST_METHOD_GET,
+    RLM_HTTP_REQUEST_METHOD_POST,
+    RLM_HTTP_REQUEST_METHOD_PATCH,
+    RLM_HTTP_REQUEST_METHOD_PUT,
+    RLM_HTTP_REQUEST_METHOD_DELETE,
+} realm_http_request_method_e;
+
+typedef struct realm_http_header {
+    const char* name;
+    const char* value;
+} realm_http_header_t;
+
+typedef struct realm_http_request {
+    realm_http_request_method_e method;
+    const char* url;
+    uint64_t timeout_ms;
+    const realm_http_header_t* headers;
+    size_t num_headers;
+    const char* body;
+    size_t body_size;
+} realm_http_request_t;
+
+typedef struct realm_http_response {
+    int status_code;
+    int custom_status_code;
+    const realm_http_header_t* headers;
+    size_t num_headers;
+    const char* body;
+    size_t body_size;
+} realm_http_response_t;
+
+/**
+ * Callback function used by Core to make a HTTP request.
+ *
+ * Complete the request by calling realm_http_transport_complete_request(),
+ * passing in the request_context pointer here and the received response.
+ * Network request are expected to be asynchronous and can be completed on any thread.
+ *
+ * @param request The request to send.
+ * @param request_context Internal state pointer of Core, needed by realm_http_transport_complete_request().
+ */
+typedef void (*realm_http_request_func_t)(realm_userdata_t userdata, const realm_http_request_t request,
+                                          void* request_context);
+
+typedef struct realm_http_transport realm_http_transport_t;
+
+/**
+ * Create a new HTTP transport with these callbacks implementing its functionality.
+ */
+RLM_API realm_http_transport_t* realm_http_transport_new(realm_http_request_func_t, realm_userdata_t userdata,
+                                                         realm_free_userdata_func_t userdata_free);
+
+/**
+ * Complete a HTTP request with the given response.
+ *
+ * @param request_context Internal state pointer passed by Core when invoking realm_http_request_func_t
+ *                        to start the request.
+ * @param response The server response to the HTTP request initiated by Core.
+ */
+RLM_API void realm_http_transport_complete_request(void* request_context, const realm_http_response_t* response);
+
+/* App */
+typedef struct realm_app realm_app_t;
+typedef struct realm_app_credentials realm_app_credentials_t;
+typedef struct realm_user realm_user_t;
+
+typedef enum realm_user_state {
+    RLM_USER_STATE_LOGGED_OUT,
+    RLM_USER_STATE_LOGGED_IN,
+    RLM_USER_STATE_REMOVED
+} realm_user_state_e;
+
+/**
+ * Possible error categories the realm_app_error_t error code can fall in.
+ */
+typedef enum realm_app_error_category {
+    /**
+     * Error category for HTTP-related errors. The error code value can be interpreted as a HTTP status code.
+     */
+    RLM_APP_ERROR_CATEGORY_HTTP,
+    /**
+     * JSON response parsing related errors. The error code is a member of realm_app_errno_json_e.
+     */
+    RLM_APP_ERROR_CATEGORY_JSON,
+    /**
+     * Client-side related errors. The error code is a member of realm_app_errno_client_e.
+     */
+    RLM_APP_ERROR_CATEGORY_CLIENT,
+    /**
+     * Errors reported by the backend. The error code is a member of realm_app_errno_service_e.
+     */
+    RLM_APP_ERROR_CATEGORY_SERVICE,
+    /**
+     * Custom error code was set in realm_http_response_t.custom_status_code.
+     * The error code is the custom_status_code value.
+     */
+    RLM_APP_ERROR_CATEGORY_CUSTOM,
+} realm_app_error_category_e;
+
+typedef enum realm_app_errno_json {
+    RLM_APP_ERR_JSON_BAD_TOKEN = 1,
+    RLM_APP_ERR_JSON_MALFORMED_JSON = 2,
+    RLM_APP_ERR_JSON_MISSING_JSON_KEY = 3,
+    RLM_APP_ERR_JSON_BAD_BSON_PARSE = 4
+} realm_app_errno_json_e;
+
+typedef enum realm_app_errno_client {
+    RLM_APP_ERR_CLIENT_USER_NOT_FOUND = 1,
+    RLM_APP_ERR_CLIENT_USER_NOT_LOGGED_IN = 2,
+    RLM_APP_ERR_CLIENT_APP_DEALLOCATED = 3
+} realm_app_errno_client_e;
+
+typedef enum realm_app_errno_service {
+    RLM_APP_ERR_SERVICE_MISSING_AUTH_REQ = 1,
+    RLM_APP_ERR_SERVICE_INVALID_SESSION = 2,
+    RLM_APP_ERR_SERVICE_USER_APP_DOMAIN_MISMATCH = 3,
+    RLM_APP_ERR_SERVICE_DOMAIN_NOT_ALLOWED = 4,
+    RLM_APP_ERR_SERVICE_READ_SIZE_LIMIT_EXCEEDED = 5,
+    RLM_APP_ERR_SERVICE_INVALID_PARAMETER = 6,
+    RLM_APP_ERR_SERVICE_MISSING_PARAMETER = 7,
+    RLM_APP_ERR_SERVICE_TWILIO_ERROR = 8,
+    RLM_APP_ERR_SERVICE_GCM_ERROR = 9,
+    RLM_APP_ERR_SERVICE_HTTP_ERROR = 10,
+    RLM_APP_ERR_SERVICE_AWS_ERROR = 11,
+    RLM_APP_ERR_SERVICE_MONGODB_ERROR = 12,
+    RLM_APP_ERR_SERVICE_ARGUMENTS_NOT_ALLOWED = 13,
+    RLM_APP_ERR_SERVICE_FUNCTION_EXECUTION_ERROR = 14,
+    RLM_APP_ERR_SERVICE_NO_MATCHING_RULE_FOUND = 15,
+    RLM_APP_ERR_SERVICE_INTERNAL_SERVER_ERROR = 16,
+    RLM_APP_ERR_SERVICE_AUTH_PROVIDER_NOT_FOUND = 17,
+    RLM_APP_ERR_SERVICE_AUTH_PROVIDER_ALREADY_EXISTS = 18,
+    RLM_APP_ERR_SERVICE_SERVICE_NOT_FOUND = 19,
+    RLM_APP_ERR_SERVICE_SERVICE_TYPE_NOT_FOUND = 20,
+    RLM_APP_ERR_SERVICE_SERVICE_ALREADY_EXISTS = 21,
+    RLM_APP_ERR_SERVICE_SERVICE_COMMAND_NOT_FOUND = 22,
+    RLM_APP_ERR_SERVICE_VALUE_NOT_FOUND = 23,
+    RLM_APP_ERR_SERVICE_VALUE_ALREADY_EXISTS = 24,
+    RLM_APP_ERR_SERVICE_VALUE_DUPLICATE_NAME = 25,
+    RLM_APP_ERR_SERVICE_FUNCTION_NOT_FOUND = 26,
+    RLM_APP_ERR_SERVICE_FUNCTION_ALREADY_EXISTS = 27,
+    RLM_APP_ERR_SERVICE_FUNCTION_DUPLICATE_NAME = 28,
+    RLM_APP_ERR_SERVICE_FUNCTION_SYNTAX_ERROR = 29,
+    RLM_APP_ERR_SERVICE_FUNCTION_INVALID = 30,
+    RLM_APP_ERR_SERVICE_INCOMING_WEBHOOK_NOT_FOUND = 31,
+    RLM_APP_ERR_SERVICE_INCOMING_WEBHOOK_ALREADY_EXISTS = 32,
+    RLM_APP_ERR_SERVICE_INCOMING_WEBHOOK_DUPLICATE_NAME = 33,
+    RLM_APP_ERR_SERVICE_RULE_NOT_FOUND = 34,
+    RLM_APP_ERR_SERVICE_API_KEY_NOT_FOUND = 35,
+    RLM_APP_ERR_SERVICE_RULE_ALREADY_EXISTS = 36,
+    RLM_APP_ERR_SERVICE_RULE_DUPLICATE_NAME = 37,
+    RLM_APP_ERR_SERVICE_AUTH_PROVIDER_DUPLICATE_NAME = 38,
+    RLM_APP_ERR_SERVICE_RESTRICTED_HOST = 39,
+    RLM_APP_ERR_SERVICE_API_KEY_ALREADY_EXISTS = 40,
+    RLM_APP_ERR_SERVICE_INCOMING_WEBHOOK_AUTH_FAILED = 41,
+    RLM_APP_ERR_SERVICE_EXECUTION_TIME_LIMIT_EXCEEDED = 42,
+    RLM_APP_ERR_SERVICE_NOT_CALLABLE = 43,
+    RLM_APP_ERR_SERVICE_USER_ALREADY_CONFIRMED = 44,
+    RLM_APP_ERR_SERVICE_USER_NOT_FOUND = 45,
+    RLM_APP_ERR_SERVICE_USER_DISABLED = 46,
+    RLM_APP_ERR_SERVICE_AUTH_ERROR = 47,
+    RLM_APP_ERR_SERVICE_BAD_REQUEST = 48,
+    RLM_APP_ERR_SERVICE_ACCOUNT_NAME_IN_USE = 49,
+    RLM_APP_ERR_SERVICE_INVALID_EMAIL_PASSWORD = 50,
+
+    RLM_APP_ERR_SERVICE_UNKNOWN = -1,
+    RLM_APP_ERR_SERVICE_NONE = 0
+} realm_app_errno_service_e;
+
+typedef enum realm_auth_provider {
+    RLM_AUTH_PROVIDER_ANONYMOUS,
+    RLM_AUTH_PROVIDER_ANONYMOUS_NO_REUSE,
+    RLM_AUTH_PROVIDER_FACEBOOK,
+    RLM_AUTH_PROVIDER_GOOGLE,
+    RLM_AUTH_PROVIDER_APPLE,
+    RLM_AUTH_PROVIDER_CUSTOM,
+    RLM_AUTH_PROVIDER_EMAIL_PASSWORD,
+    RLM_AUTH_PROVIDER_FUNCTION,
+    RLM_AUTH_PROVIDER_USER_API_KEY,
+    RLM_AUTH_PROVIDER_SERVER_API_KEY,
+} realm_auth_provider_e;
+
+typedef struct realm_app_user_apikey {
+    realm_object_id_t id;
+    const char* key;
+    const char* name;
+    bool disabled;
+} realm_app_user_apikey_t;
+
+// This type should never be returned from a function.
+// It's only meant as an asynchronous callback argument.
+// Pointers to this struct and its pointer members are only valid inside the scope
+// of the callback they were passed to.
+typedef struct realm_app_error {
+    realm_app_error_category_e error_category;
+    int error_code;
+
+    /**
+     * The underlying HTTP status code returned by the server,
+     * otherwise zero.
+     */
+    int http_status_code;
+
+    const char* message;
+
+    /**
+     * A link to MongoDB Realm server logs related to the error,
+     * or NULL if error response didn't contain log information.
+     */
+    const char* link_to_server_logs;
+} realm_app_error_t;
+
+typedef struct realm_user_identity {
+    /**
+     * Ptr to null terminated string representing user identity (memory has to be freed by SDK)
+     */
+    char* id;
+    /**
+     * Enum representing the list of auth providers
+     */
+    realm_auth_provider_e provider_type;
+} realm_user_identity_t;
+
+/**
+ * Generic completion callback for asynchronous Realm App operations.
+ *
+ * @param error Pointer to an error object if the operation failed, otherwise null if it completed successfully.
+ */
+typedef void (*realm_app_void_completion_func_t)(realm_userdata_t userdata, const realm_app_error_t* error);
+
+/**
+ * Completion callback for asynchronous Realm App operations that yield a user object.
+ *
+ * @param user User object produced by the operation, or null if it failed.
+ *             The pointer is alive only for the duration of the callback,
+ *             if you wish to use it further make a copy with realm_clone().
+ * @param error Pointer to an error object if the operation failed, otherwise null if it completed successfully.
+ */
+typedef void (*realm_app_user_completion_func_t)(realm_userdata_t userdata, realm_user_t* user,
+                                                 const realm_app_error_t* error);
+
+RLM_API realm_app_credentials_t* realm_app_credentials_new_anonymous(bool reuse_credentials) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_facebook(const char* access_token) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_google_id_token(const char* id_token) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_google_auth_code(const char* auth_code) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_apple(const char* id_token) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_jwt(const char* jwt_token) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_email_password(const char* email,
+                                                                          realm_string_t password) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_user_api_key(const char* api_key) RLM_API_NOEXCEPT;
+RLM_API realm_app_credentials_t* realm_app_credentials_new_server_api_key(const char* api_key) RLM_API_NOEXCEPT;
+
+/**
+ * Create Custom Function authentication app credentials.
+ *
+ * @param serialized_ejson_payload The arguments array to invoke the function with,
+ *                                 serialized as an Extended JSON string.
+ * @return null, if an error occurred.
+ */
+RLM_API realm_app_credentials_t* realm_app_credentials_new_function(const char* serialized_ejson_payload);
+
+RLM_API realm_auth_provider_e realm_auth_credentials_get_provider(realm_app_credentials_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Create a new app configuration.
+ *
+ * @param app_id The MongoDB Realm app id.
+ * @param http_transport The HTTP transport used to make network calls.
+ */
+RLM_API realm_app_config_t* realm_app_config_new(const char* app_id,
+                                                 const realm_http_transport_t* http_transport) RLM_API_NOEXCEPT;
+
+RLM_API void realm_app_config_set_base_url(realm_app_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_app_config_set_local_app_name(realm_app_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_app_config_set_local_app_version(realm_app_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_app_config_set_default_request_timeout(realm_app_config_t*, uint64_t ms) RLM_API_NOEXCEPT;
+RLM_API void realm_app_config_set_platform(realm_app_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_app_config_set_platform_version(realm_app_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_app_config_set_sdk_version(realm_app_config_t*, const char*) RLM_API_NOEXCEPT;
+/**
+ * Get an existing @a realm_app_credentials_t and return it's json representation
+ * Note: the caller must delete the pointer to the string via realm_release
+ *
+ * @return: a non-null ptr to the string representing the json configuration.
+ */
+RLM_API const char* realm_app_credentials_serialize_as_json(realm_app_credentials_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Create realm_app_t* instance given a valid realm configuration and sync client configuration.
+ *
+ * @return A non-null pointer if no error occurred.
+ */
+RLM_API realm_app_t* realm_app_create(const realm_app_config_t*, const realm_sync_client_config_t*);
+
+/**
+ * @note this API will be removed and it is now deprecated in favour of realm_app_create
+ *
+ * Get an existing @a realm_app_t* instance with the same app id, or create it with the
+ * configuration if it doesn't exist.
+ *
+ * @return A non-null pointer if no error occurred.
+ */
+RLM_API realm_app_t* realm_app_get(const realm_app_config_t*, const realm_sync_client_config_t*);
+
+/**
+ * @note this API will be removed and it is now deprecated in favour of realm_app_create
+ *
+ * Get an existing @a realm_app_t* instance from the cache.
+ *
+ * @return Cached app instance, or null if no cached app exists for this @a app_id.
+ */
+RLM_API realm_app_t* realm_app_get_cached(const char* app_id) RLM_API_NOEXCEPT;
+
+/**
+ * Clear all the cached @a realm_app_t* instances in the process.
+ *
+ * @a realm_app_t* instances will need to be disposed with realm_release()
+ * for them to be fully destroyed after the cache is cleared.
+ */
+RLM_API void realm_clear_cached_apps(void) RLM_API_NOEXCEPT;
+
+RLM_API const char* realm_app_get_app_id(const realm_app_t*) RLM_API_NOEXCEPT;
+RLM_API realm_user_t* realm_app_get_current_user(const realm_app_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Get the list of active users in this @a app.
+ * In case of errors this function will return false (errors to be fetched via `realm_get_last_error()`).
+ * If data is not copied the function will return true and set  `out_n` with the capacity needed.
+ * Data is only copied if the input array has enough capacity, otherwise the needed  array capacity will be set.
+ *
+ * @param out_users A pointer to an array of `realm_user_t*`, which
+ *                  will be populated with the list of active users in the app.
+ *                  Array may be NULL, in this case no data will be copied and `out_n` set if not NULL.
+ * @param capacity The maximum number of elements `out_users` can hold.
+ * @param out_n The actual number of entries written to `out_users`.
+ *              May be NULL.
+ * @return True if no exception occurred.
+ */
+RLM_API bool realm_app_get_all_users(const realm_app_t* app, realm_user_t** out_users, size_t capacity,
+                                     size_t* out_n);
+
+/**
+ * Log in a user and asynchronously retrieve a user object. Inform caller via callback once operation completes.
+ * @param app ptr to realm_app
+ * @param credentials sync credentials
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_log_in_with_credentials(realm_app_t* app, realm_app_credentials_t* credentials,
+                                               realm_app_user_completion_func_t callback, realm_userdata_t userdata,
+                                               realm_free_userdata_func_t userdata_free);
+
+/**
+ * Logout the current user.
+ * @param app ptr to realm_app
+ * @param callback invoked once operation has completed
+ * @param userdata custom userdata ptr
+ * @param userdata_free deleter for custom userdata
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_log_out_current_user(realm_app_t* app, realm_app_void_completion_func_t callback,
+                                            void* userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Refreshes the custom data for a specified user.
+ * @param app ptr to realm_app
+ * @param user ptr to user
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_refresh_custom_data(realm_app_t* app, realm_user_t* user,
+                                           realm_app_void_completion_func_t callback, realm_userdata_t userdata,
+                                           realm_free_userdata_func_t userdata_free);
+
+/**
+ * Log out the given user if they are not already logged out.
+ * @param app ptr to realm_app
+ * @param user ptr to user
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_log_out(realm_app_t* app, realm_user_t* user, realm_app_void_completion_func_t callback,
+                               realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Links the currently authenticated user with a new identity, where the identity is defined by the credentia
+ * specified as a parameter.
+ * @param app ptr to realm_app
+ * @param user ptr to the user to link
+ * @param credentials sync credentials
+ * @param callback invoked once operation has completed
+ * @param userdata custom userdata ptr
+ * @param userdata_free deleter for custom userdata
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_link_user(realm_app_t* app, realm_user_t* user, realm_app_credentials_t* credentials,
+                                 realm_app_user_completion_func_t callback, void* userdata,
+                                 realm_free_userdata_func_t userdata_free);
+
+/**
+ * Switches the active user with the specified one. The user must exist in the list of all users who have logged into
+ * this application.
+ * @param app ptr to realm_app
+ * @param user ptr to current user
+ * @param new_user ptr to the new user to switch
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_switch_user(realm_app_t* app, realm_user_t* user, realm_user_t** new_user);
+
+/**
+ * Logs out and removes the provided user.
+ * @param app ptr to realm_app
+ * @param user ptr to the user to remove
+ * @param callback invoked once operation has completed
+ * @param userdata custom userdata ptr
+ * @param userdata_free deleter for custom userdata
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_remove_user(realm_app_t* app, realm_user_t* user, realm_app_void_completion_func_t callback,
+                                   void* userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Deletes a user and all its data from the server.
+ * @param app ptr to realm_app
+ * @param user ptr to the user to delete
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_delete_user(realm_app_t* app, realm_user_t* user, realm_app_void_completion_func_t callback,
+                                   realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Registers a new email identity with the username/password provider and send confirmation email.
+ * @param app ptr to realm_app
+ * @param email identity email
+ * @param password associated to the identity
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_email_password_provider_client_register_email(realm_app_t* app, const char* email,
+                                                                     realm_string_t password,
+                                                                     realm_app_void_completion_func_t callback,
+                                                                     realm_userdata_t userdata,
+                                                                     realm_free_userdata_func_t userdata_free);
+
+/**
+ * Confirms an email identity with the username/password provider.
+ * @param app ptr to realm_app
+ * @param token string emailed
+ * @param token_id string emailed
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_email_password_provider_client_confirm_user(realm_app_t* app, const char* token,
+                                                                   const char* token_id,
+                                                                   realm_app_void_completion_func_t callback,
+                                                                   realm_userdata_t userdata,
+                                                                   realm_free_userdata_func_t userdata_free);
+
+/**
+ * Re-sends a confirmation email to a user that has registered but not yet confirmed their email address.
+ * @param app ptr to realm_app
+ * @param email to use
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_email_password_provider_client_resend_confirmation_email(
+    realm_app_t* app, const char* email, realm_app_void_completion_func_t callback, realm_userdata_t userdata,
+    realm_free_userdata_func_t userdata_free);
+
+/**
+ * Send reset password to the email specified in the parameter passed to the function.
+ * @param app ptr to realm_app
+ * @param email where to send the reset instructions
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_email_password_provider_client_send_reset_password_email(
+    realm_app_t* app, const char* email, realm_app_void_completion_func_t callback, realm_userdata_t userdata,
+    realm_free_userdata_func_t userdata_free);
+
+/**
+ * Retries the custom confirmation function on a user for a given email.
+ * @param app ptr to realm_app
+ * @param email email for the user
+ * @param callback invoked once operation has completed
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_email_password_provider_client_retry_custom_confirmation(
+    realm_app_t* app, const char* email, realm_app_void_completion_func_t callback, realm_userdata_t userdata,
+    realm_free_userdata_func_t userdata_free);
+
+/**
+ * Resets the password of an email identity using the password reset token emailed to a user.
+ * @param app ptr to realm_app
+ * @param password new password to set
+ * @param token ptr to token string emailed to the user
+ * @param token_id ptr to token_id emailed to the user
+ * @return True if no error has been recorded, False otherwise
+ */
+RLM_API bool realm_app_email_password_provider_client_reset_password(realm_app_t* app, realm_string_t password,
+                                                                     const char* token, const char* token_id,
+                                                                     realm_app_void_completion_func_t callback,
+                                                                     realm_userdata_t userdata,
+                                                                     realm_free_userdata_func_t userdata_free);
+
+/**
+ * Run the Email/Password Authentication provider's password reset function.
+ *
+ * @param serialized_ejson_payload The arguments array to invoke the function with,
+ *                                 serialized as an Extended JSON string.
+ * @return true, if no error occurred.
+ */
+RLM_API bool realm_app_email_password_provider_client_call_reset_password_function(
+    realm_app_t*, const char* email, realm_string_t password, const char* serialized_ejson_payload,
+    realm_app_void_completion_func_t, realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Creates a user API key that can be used to authenticate as the current user.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_user_apikey_provider_client_create_apikey(
+    const realm_app_t*, const realm_user_t*, const char* name,
+    void (*)(realm_userdata_t userdata, realm_app_user_apikey_t*, const realm_app_error_t*),
+    realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Fetches a user API key associated with the current user.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_user_apikey_provider_client_fetch_apikey(
+    const realm_app_t*, const realm_user_t*, realm_object_id_t id,
+    void (*)(realm_userdata_t userdata, realm_app_user_apikey_t*, const realm_app_error_t*),
+    realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Fetches the user API keys associated with the current user.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_user_apikey_provider_client_fetch_apikeys(
+    const realm_app_t*, const realm_user_t*,
+    void (*)(realm_userdata_t userdata, realm_app_user_apikey_t[], size_t count, realm_app_error_t*),
+    realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Deletes a user API key associated with the current user.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_user_apikey_provider_client_delete_apikey(const realm_app_t*, const realm_user_t*,
+                                                                 realm_object_id_t id,
+                                                                 realm_app_void_completion_func_t,
+                                                                 realm_userdata_t userdata,
+                                                                 realm_free_userdata_func_t userdata_free);
+
+/**
+ * Enables a user API key associated with the current user.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_user_apikey_provider_client_enable_apikey(const realm_app_t*, const realm_user_t*,
+                                                                 realm_object_id_t id,
+                                                                 realm_app_void_completion_func_t,
+                                                                 realm_userdata_t userdata,
+                                                                 realm_free_userdata_func_t userdata_free);
+
+/**
+ * Disables a user API key associated with the current user.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_user_apikey_provider_client_disable_apikey(const realm_app_t*, const realm_user_t*,
+                                                                  realm_object_id_t id,
+                                                                  realm_app_void_completion_func_t,
+                                                                  realm_userdata_t userdata,
+                                                                  realm_free_userdata_func_t userdata_free);
+
+/**
+ * Register a device for push notifications.
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_push_notification_client_register_device(
+    const realm_app_t*, const realm_user_t*, const char* service_name, const char* registration_token,
+    realm_app_void_completion_func_t, realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Deregister a device for push notificatons
+ * @return True if no error was recorded. False otherwise
+ */
+RLM_API bool realm_app_push_notification_client_deregister_device(const realm_app_t*, const realm_user_t*,
+                                                                  const char* service_name,
+                                                                  realm_app_void_completion_func_t,
+                                                                  realm_userdata_t userdata,
+                                                                  realm_free_userdata_func_t userdata_free);
+
+/**
+ * Run a named MongoDB Realm function.
+ *
+ * @param serialized_ejson_args The arguments array to invoke the function with,
+ *                              serialized as an Extended JSON string.
+ * @return true, if no error occurred.
+ */
+RLM_API bool realm_app_call_function(const realm_app_t*, const realm_user_t*, const char* function_name,
+                                     const char* serialized_ejson_args,
+                                     void (*)(realm_userdata_t userdata, const char* serialized_ejson_response,
+                                              const realm_app_error_t*),
+                                     realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ * Instruct this app's sync client to immediately reconnect.
+ * Useful when the device has been offline and then receives a network reachability update.
+ *
+ * The sync client will always attempt to reconnect eventually, this is just a hint.
+ */
+RLM_API void realm_app_sync_client_reconnect(realm_app_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Get whether there are any active sync sessions for this app.
+ */
+RLM_API bool realm_app_sync_client_has_sessions(const realm_app_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Wait until the sync client has terminated all sessions and released all realm files
+ * it had open.
+ *
+ * WARNING: this is a blocking wait.
+ */
+RLM_API void realm_app_sync_client_wait_for_sessions_to_terminate(realm_app_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Get the default realm file path based on the user and partition value in the config.
+ *
+ * @param custom_filename custom name for the realm file itself. Can be null,
+ *                        in which case a default name based on the config will be used.
+ *
+ * Return value must be manually released with realm_free().
+ */
+RLM_API char* realm_app_sync_client_get_default_file_path_for_realm(const realm_sync_config_t*,
+                                                                    const char* custom_filename);
+/**
+ * Return the identiy for the user passed as argument
+ * @param user ptr to the user for which the identiy has to be retrieved
+ * @return a ptr to the identity string
+ */
+RLM_API const char* realm_user_get_identity(const realm_user_t* user) RLM_API_NOEXCEPT;
+
+/**
+ * Retrieve the state for the user passed as argument
+ * @param user ptr to the user for which the state has to be retrieved
+ * @return realm_user_state_e value
+ */
+RLM_API realm_user_state_e realm_user_get_state(const realm_user_t* user) RLM_API_NOEXCEPT;
+
+/**
+ * Get the list of identities of this @a user.
+ *
+ * @param out_identities A pointer to an array of `realm_user_identity_t`, which
+ *                       will be populated with the list of identities of this user.
+ *                       Array may be NULL, in this case no data will be copied and `out_n` set if not NULL.
+ * @param capacity The maximum number of elements `out_identities` can hold.
+ * @param out_n The actual number of entries written to `out_identities`. May be NULL.
+ * @return true, if no errors occurred.
+ */
+RLM_API bool realm_user_get_all_identities(const realm_user_t* user, realm_user_identity_t* out_identities,
+                                           size_t capacity, size_t* out_n);
+
+RLM_API const char* realm_user_get_local_identity(const realm_user_t*) RLM_API_NOEXCEPT;
+
+// returned pointer must be manually released with realm_free()
+RLM_API char* realm_user_get_device_id(const realm_user_t*) RLM_API_NOEXCEPT;
+
+RLM_API realm_auth_provider_e realm_user_get_auth_provider(const realm_user_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Log out the user and mark it as logged out.
+ *
+ * Any active sync sessions associated with this user will be stopped.
+ *
+ * @return true, if no errors occurred.
+ */
+RLM_API bool realm_user_log_out(realm_user_t*);
+
+RLM_API bool realm_user_is_logged_in(const realm_user_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Get the custom user data from the user's access token.
+ *
+ * Returned value must be manually released with realm_free().
+ *
+ * @return An Extended JSON document serialized as string,
+ *         or null if token doesn't have any custom data.
+ */
+RLM_API char* realm_user_get_custom_data(const realm_user_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Get the user profile associated with this user.
+ *
+ * Returned value must be manually released with realm_free().
+ *
+ * @return An Extended JSON document serialized as string,
+ *         or null if an error occurred.
+ */
+RLM_API char* realm_user_get_profile_data(const realm_user_t*);
+
+/**
+ * Return the access token associated with the user.
+ * @return a string that rapresents the access token
+ */
+RLM_API char* realm_user_get_access_token(const realm_user_t*);
+
+/**
+ * Return the refresh token associated with the user.
+ * @return a string that represents the refresh token
+ */
+RLM_API char* realm_user_get_refresh_token(const realm_user_t*);
+
+/**
+ * Return the realm app for the user passed as parameter.
+ * @return a ptr to the app for the user.
+ */
+RLM_API realm_app_t* realm_user_get_app(const realm_user_t*) RLM_API_NOEXCEPT;
+
+
+/* Sync */
+typedef enum realm_sync_client_metadata_mode {
+    RLM_SYNC_CLIENT_METADATA_MODE_PLAINTEXT,
+    RLM_SYNC_CLIENT_METADATA_MODE_ENCRYPTED,
+    RLM_SYNC_CLIENT_METADATA_MODE_DISABLED,
+} realm_sync_client_metadata_mode_e;
+
+typedef enum realm_sync_client_reconnect_mode {
+    RLM_SYNC_CLIENT_RECONNECT_MODE_NORMAL,
+    RLM_SYNC_CLIENT_RECONNECT_MODE_TESTING,
+} realm_sync_client_reconnect_mode_e;
+
+typedef enum realm_sync_session_resync_mode {
+    RLM_SYNC_SESSION_RESYNC_MODE_MANUAL,
+    RLM_SYNC_SESSION_RESYNC_MODE_DISCARD_LOCAL,
+    RLM_SYNC_SESSION_RESYNC_MODE_RECOVER,
+    RLM_SYNC_SESSION_RESYNC_MODE_RECOVER_OR_DISCARD,
+} realm_sync_session_resync_mode_e;
+
+typedef enum realm_sync_session_stop_policy {
+    RLM_SYNC_SESSION_STOP_POLICY_IMMEDIATELY,
+    RLM_SYNC_SESSION_STOP_POLICY_LIVE_INDEFINITELY,
+    RLM_SYNC_SESSION_STOP_POLICY_AFTER_CHANGES_UPLOADED,
+} realm_sync_session_stop_policy_e;
+
+typedef enum realm_sync_session_state {
+    RLM_SYNC_SESSION_STATE_ACTIVE,
+    RLM_SYNC_SESSION_STATE_DYING,
+    RLM_SYNC_SESSION_STATE_INACTIVE,
+    RLM_SYNC_SESSION_STATE_WAITING_FOR_ACCESS_TOKEN,
+} realm_sync_session_state_e;
+
+typedef enum realm_sync_connection_state {
+    RLM_SYNC_CONNECTION_STATE_DISCONNECTED,
+    RLM_SYNC_CONNECTION_STATE_CONNECTING,
+    RLM_SYNC_CONNECTION_STATE_CONNECTED,
+} realm_sync_connection_state_e;
+
+typedef enum realm_sync_progress_direction {
+    RLM_SYNC_PROGRESS_DIRECTION_UPLOAD,
+    RLM_SYNC_PROGRESS_DIRECTION_DOWNLOAD,
+} realm_sync_progress_direction_e;
+
+/**
+ * Possible error categories realm_sync_error_code_t can fall in.
+ */
+typedef enum realm_sync_error_category {
+    RLM_SYNC_ERROR_CATEGORY_CLIENT,
+    RLM_SYNC_ERROR_CATEGORY_CONNECTION,
+    RLM_SYNC_ERROR_CATEGORY_SESSION,
+
+    /**
+     * System error - POSIX errno, Win32 HRESULT, etc.
+     */
+    RLM_SYNC_ERROR_CATEGORY_SYSTEM,
+
+    /**
+     * Unknown source of error.
+     */
+    RLM_SYNC_ERROR_CATEGORY_UNKNOWN,
+} realm_sync_error_category_e;
+
+typedef enum realm_sync_errno_client {
+    RLM_SYNC_ERR_CLIENT_CONNECTION_CLOSED = 100,
+    RLM_SYNC_ERR_CLIENT_UNKNOWN_MESSAGE = 101,
+    RLM_SYNC_ERR_CLIENT_BAD_SYNTAX = 102,
+    RLM_SYNC_ERR_CLIENT_LIMITS_EXCEEDED = 103,
+    RLM_SYNC_ERR_CLIENT_BAD_SESSION_IDENT = 104,
+    RLM_SYNC_ERR_CLIENT_BAD_MESSAGE_ORDER = 105,
+    RLM_SYNC_ERR_CLIENT_BAD_CLIENT_FILE_IDENT = 106,
+    RLM_SYNC_ERR_CLIENT_BAD_PROGRESS = 107,
+    RLM_SYNC_ERR_CLIENT_BAD_CHANGESET_HEADER_SYNTAX = 108,
+    RLM_SYNC_ERR_CLIENT_BAD_CHANGESET_SIZE = 109,
+    RLM_SYNC_ERR_CLIENT_BAD_ORIGIN_FILE_IDENT = 110,
+    RLM_SYNC_ERR_CLIENT_BAD_SERVER_VERSION = 111,
+    RLM_SYNC_ERR_CLIENT_BAD_CHANGESET = 112,
+    RLM_SYNC_ERR_CLIENT_BAD_REQUEST_IDENT = 113,
+    RLM_SYNC_ERR_CLIENT_BAD_ERROR_CODE = 114,
+    RLM_SYNC_ERR_CLIENT_BAD_COMPRESSION = 115,
+    RLM_SYNC_ERR_CLIENT_BAD_CLIENT_VERSION = 116,
+    RLM_SYNC_ERR_CLIENT_SSL_SERVER_CERT_REJECTED = 117,
+    RLM_SYNC_ERR_CLIENT_PONG_TIMEOUT = 118,
+    RLM_SYNC_ERR_CLIENT_BAD_CLIENT_FILE_IDENT_SALT = 119,
+    RLM_SYNC_ERR_CLIENT_BAD_FILE_IDENT = 120,
+    RLM_SYNC_ERR_CLIENT_CONNECT_TIMEOUT = 121,
+    RLM_SYNC_ERR_CLIENT_BAD_TIMESTAMP = 122,
+    RLM_SYNC_ERR_CLIENT_BAD_PROTOCOL_FROM_SERVER = 123,
+    RLM_SYNC_ERR_CLIENT_CLIENT_TOO_OLD_FOR_SERVER = 124,
+    RLM_SYNC_ERR_CLIENT_CLIENT_TOO_NEW_FOR_SERVER = 125,
+    RLM_SYNC_ERR_CLIENT_PROTOCOL_MISMATCH = 126,
+    RLM_SYNC_ERR_CLIENT_BAD_STATE_MESSAGE = 127,
+    RLM_SYNC_ERR_CLIENT_MISSING_PROTOCOL_FEATURE = 128,
+    RLM_SYNC_ERR_CLIENT_HTTP_TUNNEL_FAILED = 131,
+    RLM_SYNC_ERR_CLIENT_AUTO_CLIENT_RESET_FAILURE = 132,
+} realm_sync_errno_client_e;
+
+typedef enum realm_sync_errno_connection {
+    RLM_SYNC_ERR_CONNECTION_CONNECTION_CLOSED = 100,
+    RLM_SYNC_ERR_CONNECTION_OTHER_ERROR = 101,
+    RLM_SYNC_ERR_CONNECTION_UNKNOWN_MESSAGE = 102,
+    RLM_SYNC_ERR_CONNECTION_BAD_SYNTAX = 103,
+    RLM_SYNC_ERR_CONNECTION_LIMITS_EXCEEDED = 104,
+    RLM_SYNC_ERR_CONNECTION_WRONG_PROTOCOL_VERSION = 105,
+    RLM_SYNC_ERR_CONNECTION_BAD_SESSION_IDENT = 106,
+    RLM_SYNC_ERR_CONNECTION_REUSE_OF_SESSION_IDENT = 107,
+    RLM_SYNC_ERR_CONNECTION_BOUND_IN_OTHER_SESSION = 108,
+    RLM_SYNC_ERR_CONNECTION_BAD_MESSAGE_ORDER = 109,
+    RLM_SYNC_ERR_CONNECTION_BAD_DECOMPRESSION = 110,
+    RLM_SYNC_ERR_CONNECTION_BAD_CHANGESET_HEADER_SYNTAX = 111,
+    RLM_SYNC_ERR_CONNECTION_BAD_CHANGESET_SIZE = 112,
+    RLM_SYNC_ERR_CONNECTION_SWITCH_TO_FLX_SYNC = 113,
+    RLM_SYNC_ERR_CONNECTION_SWITCH_TO_PBS = 114,
+} realm_sync_errno_connection_e;
+
+typedef enum realm_sync_errno_session {
+    RLM_SYNC_ERR_SESSION_SESSION_CLOSED = 200,
+    RLM_SYNC_ERR_SESSION_OTHER_SESSION_ERROR = 201,
+    RLM_SYNC_ERR_SESSION_TOKEN_EXPIRED = 202,
+    RLM_SYNC_ERR_SESSION_BAD_AUTHENTICATION = 203,
+    RLM_SYNC_ERR_SESSION_ILLEGAL_REALM_PATH = 204,
+    RLM_SYNC_ERR_SESSION_NO_SUCH_REALM = 205,
+    RLM_SYNC_ERR_SESSION_PERMISSION_DENIED = 206,
+    RLM_SYNC_ERR_SESSION_BAD_SERVER_FILE_IDENT = 207,
+    RLM_SYNC_ERR_SESSION_BAD_CLIENT_FILE_IDENT = 208,
+    RLM_SYNC_ERR_SESSION_BAD_SERVER_VERSION = 209,
+    RLM_SYNC_ERR_SESSION_BAD_CLIENT_VERSION = 210,
+    RLM_SYNC_ERR_SESSION_DIVERGING_HISTORIES = 211,
+    RLM_SYNC_ERR_SESSION_BAD_CHANGESET = 212,
+    RLM_SYNC_ERR_SESSION_PARTIAL_SYNC_DISABLED = 214,
+    RLM_SYNC_ERR_SESSION_UNSUPPORTED_SESSION_FEATURE = 215,
+    RLM_SYNC_ERR_SESSION_BAD_ORIGIN_FILE_IDENT = 216,
+    RLM_SYNC_ERR_SESSION_BAD_CLIENT_FILE = 217,
+    RLM_SYNC_ERR_SESSION_SERVER_FILE_DELETED = 218,
+    RLM_SYNC_ERR_SESSION_CLIENT_FILE_BLACKLISTED = 219,
+    RLM_SYNC_ERR_SESSION_USER_BLACKLISTED = 220,
+    RLM_SYNC_ERR_SESSION_TRANSACT_BEFORE_UPLOAD = 221,
+    RLM_SYNC_ERR_SESSION_CLIENT_FILE_EXPIRED = 222,
+    RLM_SYNC_ERR_SESSION_USER_MISMATCH = 223,
+    RLM_SYNC_ERR_SESSION_TOO_MANY_SESSIONS = 224,
+    RLM_SYNC_ERR_SESSION_INVALID_SCHEMA_CHANGE = 225,
+    RLM_SYNC_ERR_SESSION_BAD_QUERY = 226,
+    RLM_SYNC_ERR_SESSION_OBJECT_ALREADY_EXISTS = 227,
+    RLM_SYNC_ERR_SESSION_SERVER_PERMISSIONS_CHANGED = 228,
+    RLM_SYNC_ERR_SESSION_INITIAL_SYNC_NOT_COMPLETED = 229,
+    RLM_SYNC_ERR_SESSION_WRITE_NOT_ALLOWED = 230,
+    RLM_SYNC_ERR_SESSION_COMPENSATING_WRITE = 231,
+} realm_sync_errno_session_e;
+
+typedef enum realm_sync_error_action {
+    RLM_SYNC_ERROR_ACTION_NO_ACTION,
+    RLM_SYNC_ERROR_ACTION_PROTOCOL_VIOLATION,
+    RLM_SYNC_ERROR_ACTION_APPLICATION_BUG,
+    RLM_SYNC_ERROR_ACTION_WARNING,
+    RLM_SYNC_ERROR_ACTION_TRANSIENT,
+    RLM_SYNC_ERROR_ACTION_DELETE_REALM,
+    RLM_SYNC_ERROR_ACTION_CLIENT_RESET,
+    RLM_SYNC_ERROR_ACTION_CLIENT_RESET_NO_RECOVERY,
+} realm_sync_error_action_e;
+
+typedef struct realm_sync_session realm_sync_session_t;
+typedef struct realm_async_open_task realm_async_open_task_t;
+
+// This type should never be returned from a function.
+// It's only meant as an asynchronous callback argument.
+// Pointers to this struct and its pointer members are only valid inside the scope
+// of the callback they were passed to.
+typedef struct realm_sync_error_code {
+    realm_sync_error_category_e category;
+    int value;
+    const char* message;
+} realm_sync_error_code_t;
+
+typedef struct realm_sync_error_user_info {
+    const char* key;
+    const char* value;
+} realm_sync_error_user_info_t;
+
+// This type should never be returned from a function.
+// It's only meant as an asynchronous callback argument.
+// Pointers to this struct and its pointer members are only valid inside the scope
+// of the callback they were passed to.
+typedef struct realm_sync_error {
+    realm_sync_error_code_t error_code;
+    const char* detailed_message;
+    const char* c_original_file_path_key;
+    const char* c_recovery_file_path_key;
+    bool is_fatal;
+    bool is_unrecognized_by_client;
+    bool is_client_reset_requested;
+    realm_sync_error_action_e server_requests_action;
+
+    realm_sync_error_user_info_t* user_info_map;
+    size_t user_info_length;
+} realm_sync_error_t;
+
+/**
+ * Callback function invoked by the sync session once it has uploaded or download
+ * all available changesets. See @a realm_sync_session_wait_for_upload and
+ * @a realm_sync_session_wait_for_download.
+ *
+ * This callback is invoked on the sync client's worker thread.
+ *
+ * @param error Null, if the operation completed successfully.
+ */
+typedef void (*realm_sync_wait_for_completion_func_t)(realm_userdata_t userdata, realm_sync_error_code_t* error);
+typedef void (*realm_sync_connection_state_changed_func_t)(realm_userdata_t userdata,
+                                                           realm_sync_connection_state_e old_state,
+                                                           realm_sync_connection_state_e new_state);
+typedef void (*realm_sync_session_state_changed_func_t)(realm_userdata_t userdata,
+                                                        realm_sync_session_state_e old_state,
+                                                        realm_sync_session_state_e new_state);
+typedef void (*realm_sync_progress_func_t)(realm_userdata_t userdata, uint64_t transferred_bytes,
+                                           uint64_t total_bytes);
+typedef void (*realm_sync_error_handler_func_t)(realm_userdata_t userdata, realm_sync_session_t*,
+                                                const realm_sync_error_t);
+typedef bool (*realm_sync_ssl_verify_func_t)(realm_userdata_t userdata, const char* server_address, short server_port,
+                                             const char* pem_data, size_t pem_size, int preverify_ok, int depth);
+typedef bool (*realm_sync_before_client_reset_func_t)(realm_userdata_t userdata, realm_t* before_realm);
+typedef bool (*realm_sync_after_client_reset_func_t)(realm_userdata_t userdata, realm_t* before_realm,
+                                                     realm_thread_safe_reference_t* after_realm, bool did_recover);
+
+typedef struct realm_flx_sync_subscription realm_flx_sync_subscription_t;
+typedef struct realm_flx_sync_subscription_set realm_flx_sync_subscription_set_t;
+typedef struct realm_flx_sync_mutable_subscription_set realm_flx_sync_mutable_subscription_set_t;
+typedef struct realm_flx_sync_subscription_desc realm_flx_sync_subscription_desc_t;
+typedef enum realm_flx_sync_subscription_set_state {
+    RLM_SYNC_SUBSCRIPTION_UNCOMMITTED = 0,
+    RLM_SYNC_SUBSCRIPTION_PENDING,
+    RLM_SYNC_BOOTSTRAPPING,
+    RLM_SYNC_SUBSCRIPTION_COMPLETE,
+    RLM_SYNC_SUBSCRIPTION_ERROR,
+    RLM_SYNC_SUBSCRIPTION_SUPERSEDED,
+} realm_flx_sync_subscription_set_state_e;
+typedef void (*realm_sync_on_subscription_state_changed_t)(realm_userdata_t userdata,
+                                                           realm_flx_sync_subscription_set_state_e state);
+
+/**
+ * Callback function invoked by the async open task once the realm is open and fully synchronized.
+ *
+ * This callback is invoked on the sync client's worker thread.
+ *
+ * @param realm Downloaded realm instance, or null if an error occurred.
+ *              Move to the thread you want to use it on and
+ *              thaw with @a realm_from_thread_safe_reference().
+ *              Be aware that once received through this call, you own
+ *              the object and must release it when used.
+ * @param error Null, if the operation complete successfully.
+ */
+typedef void (*realm_async_open_task_completion_func_t)(realm_userdata_t userdata,
+                                                        realm_thread_safe_reference_t* realm,
+                                                        const realm_async_error_t* error);
+
+RLM_API realm_sync_client_config_t* realm_sync_client_config_new(void) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_base_file_path(realm_sync_client_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_metadata_mode(realm_sync_client_config_t*,
+                                                        realm_sync_client_metadata_mode_e) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_metadata_encryption_key(realm_sync_client_config_t*,
+                                                                  const uint8_t[64]) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_log_callback(realm_sync_client_config_t*, realm_log_func_t,
+                                                       realm_userdata_t userdata,
+                                                       realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_log_level(realm_sync_client_config_t*, realm_log_level_e) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_reconnect_mode(realm_sync_client_config_t*,
+                                                         realm_sync_client_reconnect_mode_e) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_multiplex_sessions(realm_sync_client_config_t*, bool) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_user_agent_binding_info(realm_sync_client_config_t*,
+                                                                  const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_user_agent_application_info(realm_sync_client_config_t*,
+                                                                      const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_connect_timeout(realm_sync_client_config_t*, uint64_t) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_connection_linger_time(realm_sync_client_config_t*,
+                                                                 uint64_t) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_ping_keepalive_period(realm_sync_client_config_t*,
+                                                                uint64_t) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_pong_keepalive_timeout(realm_sync_client_config_t*,
+                                                                 uint64_t) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_client_config_set_fast_reconnect_limit(realm_sync_client_config_t*,
+                                                               uint64_t) RLM_API_NOEXCEPT;
+
+RLM_API realm_sync_config_t* realm_sync_config_new(const realm_user_t*, const char* partition_value) RLM_API_NOEXCEPT;
+RLM_API realm_sync_config_t* realm_flx_sync_config_new(const realm_user_t*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_session_stop_policy(realm_sync_config_t*,
+                                                       realm_sync_session_stop_policy_e) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_error_handler(realm_sync_config_t*, realm_sync_error_handler_func_t,
+                                                 realm_userdata_t userdata,
+                                                 realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_client_validate_ssl(realm_sync_config_t*, bool) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_ssl_trust_certificate_path(realm_sync_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_ssl_verify_callback(realm_sync_config_t*, realm_sync_ssl_verify_func_t,
+                                                       realm_userdata_t userdata,
+                                                       realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_cancel_waits_on_nonfatal_error(realm_sync_config_t*, bool) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_authorization_header_name(realm_sync_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_custom_http_header(realm_sync_config_t*, const char* name,
+                                                      const char* value) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_recovery_directory_path(realm_sync_config_t*, const char*) RLM_API_NOEXCEPT;
+RLM_API void realm_sync_config_set_resync_mode(realm_sync_config_t*,
+                                               realm_sync_session_resync_mode_e) RLM_API_NOEXCEPT;
+RLM_API void
+realm_sync_config_set_before_client_reset_handler(realm_sync_config_t*, realm_sync_before_client_reset_func_t,
+                                                  realm_userdata_t userdata,
+                                                  realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+RLM_API void
+realm_sync_config_set_after_client_reset_handler(realm_sync_config_t*, realm_sync_after_client_reset_func_t,
+                                                 realm_userdata_t userdata,
+                                                 realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+
+/**
+ * Fetch subscription id for the subscription passed as argument.
+ * @return realm_object_id_t for the subscription passed as argument
+ */
+RLM_API realm_object_id_t realm_sync_subscription_id(const realm_flx_sync_subscription_t* subscription)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Fetch subscription name for the subscription passed as argument.
+ * @return realm_string_t which contains the name of the subscription.
+ */
+RLM_API realm_string_t realm_sync_subscription_name(const realm_flx_sync_subscription_t* subscription)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Fetch object class name for the subscription passed as argument.
+ * @return a realm_string_t which contains the class name of the subscription.
+ */
+RLM_API realm_string_t realm_sync_subscription_object_class_name(const realm_flx_sync_subscription_t* subscription)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Fetch the query string associated with the subscription passed as argument.
+ * @return realm_string_t which contains the query associated with the subscription.
+ */
+RLM_API realm_string_t realm_sync_subscription_query_string(const realm_flx_sync_subscription_t* subscription)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Fetch the timestamp in which the subscription was created for the subscription passed as argument.
+ * @return realm_timestamp_t representing the timestamp in which the subscription for created.
+ */
+RLM_API realm_timestamp_t realm_sync_subscription_created_at(const realm_flx_sync_subscription_t* subscription)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Fetch the timestamp in which the subscription was updated for the subscription passed as argument.
+ * @return realm_timestamp_t representing the timestamp in which the subscription was updated.
+ */
+RLM_API realm_timestamp_t realm_sync_subscription_updated_at(const realm_flx_sync_subscription_t* subscription)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Get latest subscription set
+ * @return a non null subscription set pointer if such it exists.
+ */
+RLM_API realm_flx_sync_subscription_set_t* realm_sync_get_latest_subscription_set(const realm_t*);
+
+/**
+ * Get active subscription set
+ * @return a non null subscription set pointer if such it exists.
+ */
+RLM_API realm_flx_sync_subscription_set_t* realm_sync_get_active_subscription_set(const realm_t*);
+
+/**
+ * Wait until subscripton set state is equal to the state passed as parameter.
+ * This is a blocking operation.
+ * @return the current subscription state
+ */
+RLM_API realm_flx_sync_subscription_set_state_e realm_sync_on_subscription_set_state_change_wait(
+    const realm_flx_sync_subscription_set_t*, realm_flx_sync_subscription_set_state_e) RLM_API_NOEXCEPT;
+
+/**
+ * Register a handler in order to be notified when subscription set is equal to the one passed as parameter
+ * This is an asynchronous operation.
+ * @return true/false if the handler was registered correctly
+ */
+RLM_API bool realm_sync_on_subscription_set_state_change_async(
+    const realm_flx_sync_subscription_set_t* subscription_set, realm_flx_sync_subscription_set_state_e notify_when,
+    realm_sync_on_subscription_state_changed_t, realm_userdata_t userdata, realm_free_userdata_func_t userdata_free);
+
+/**
+ *  Retrieve version for the subscription set passed as parameter
+ *  @return subscription set version if the poiter to the subscription is valid
+ */
+RLM_API int64_t realm_sync_subscription_set_version(const realm_flx_sync_subscription_set_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Fetch current state for the subscription set passed as parameter
+ *  @return the current state of the subscription_set
+ */
+RLM_API realm_flx_sync_subscription_set_state_e
+realm_sync_subscription_set_state(const realm_flx_sync_subscription_set_t*) RLM_API_NOEXCEPT;
+
+/**
+ *  Query subscription set error string
+ *  @return error string for the subscription passed as parameter
+ */
+RLM_API const char* realm_sync_subscription_set_error_str(const realm_flx_sync_subscription_set_t*) RLM_API_NOEXCEPT;
+
+/**
+ *  Retrieve the number of subscriptions for the subscription set passed as parameter
+ *  @return the number of subscriptions
+ */
+RLM_API size_t realm_sync_subscription_set_size(const realm_flx_sync_subscription_set_t*) RLM_API_NOEXCEPT;
+
+/**
+ *  Access the subscription at index.
+ *  @return the subscription or nullptr if the index is not valid
+ */
+RLM_API realm_flx_sync_subscription_t* realm_sync_subscription_at(const realm_flx_sync_subscription_set_t*,
+                                                                  size_t index);
+/**
+ *  Find subscription associated to the query passed as parameter
+ *  @return a pointer to the subscription or nullptr if not found
+ */
+RLM_API realm_flx_sync_subscription_t* realm_sync_find_subscription_by_query(const realm_flx_sync_subscription_set_t*,
+                                                                             realm_query_t*) RLM_API_NOEXCEPT;
+
+/**
+ *  Find subscription associated to the results set  passed as parameter
+ *  @return a pointer to the subscription or nullptr if not found
+ */
+RLM_API realm_flx_sync_subscription_t*
+realm_sync_find_subscription_by_results(const realm_flx_sync_subscription_set_t*, realm_results_t*) RLM_API_NOEXCEPT;
+
+
+/**
+ *  Find subscription by name passed as parameter
+ *  @return a pointer to the subscription or nullptr if not found
+ */
+RLM_API realm_flx_sync_subscription_t* realm_sync_find_subscription_by_name(const realm_flx_sync_subscription_set_t*,
+                                                                            const char* name) RLM_API_NOEXCEPT;
+
+/**
+ *  Refresh subscription
+ *  @return true/false if the operation was successful or not
+ */
+RLM_API bool realm_sync_subscription_set_refresh(realm_flx_sync_subscription_set_t*);
+
+/**
+ *  Convert a subscription into a mutable one in order to alter the subscription itself
+ *  @return a pointer to a mutable subscription
+ */
+RLM_API realm_flx_sync_mutable_subscription_set_t*
+realm_sync_make_subscription_set_mutable(realm_flx_sync_subscription_set_t*);
+
+/**
+ *  Clear the subscription set passed as parameter
+ *  @return true/false if operation was successful
+ */
+RLM_API bool realm_sync_subscription_set_clear(realm_flx_sync_mutable_subscription_set_t*);
+
+/**
+ * Insert ot update the query contained inside a result object for the subscription set passed as parameter, if
+ * successful the index where the query was inserted or updated is returned along with the info whether a new query
+ * was inserted or not. It is possible to specify a name for the query inserted (optional).
+ *  @return true/false if operation was successful
+ */
+RLM_API bool realm_sync_subscription_set_insert_or_assign_results(realm_flx_sync_mutable_subscription_set_t*,
+                                                                  realm_results_t*, const char* name,
+                                                                  size_t* out_index, bool* out_inserted);
+/**
+ * Insert ot update a query for the subscription set passed as parameter, if successful the index where the query
+ * was inserted or updated is returned along with the info whether a new query was inserted or not. It is possible to
+ * specify a name for the query inserted (optional).
+ *  @return true/false if operation was successful
+ */
+RLM_API bool realm_sync_subscription_set_insert_or_assign_query(realm_flx_sync_mutable_subscription_set_t*,
+                                                                realm_query_t*, const char* name, size_t* out_index,
+                                                                bool* out_inserted);
+/**
+ *  Erase from subscription set by id. If operation completes successfully set the bool out param.
+ *  @return true if no error occurred, false otherwise (use realm_get_last_error for fetching the error).
+ */
+RLM_API bool realm_sync_subscription_set_erase_by_id(realm_flx_sync_mutable_subscription_set_t*,
+                                                     const realm_object_id_t*, bool* erased);
+/**
+ *  Erase from subscription set by name. If operation completes successfully set the bool out param.
+ *  @return true if no error occurred, false otherwise (use realm_get_last_error for fetching the error)
+ */
+RLM_API bool realm_sync_subscription_set_erase_by_name(realm_flx_sync_mutable_subscription_set_t*, const char*,
+                                                       bool* erased);
+/**
+ *  Erase from subscription set by query. If operation completes successfully set the bool out param.
+ *  @return true if no error occurred, false otherwise (use realm_get_last_error for fetching the error)
+ */
+RLM_API bool realm_sync_subscription_set_erase_by_query(realm_flx_sync_mutable_subscription_set_t*, realm_query_t*,
+                                                        bool* erased);
+/**
+ *  Erase from subscription set by results. If operation completes successfully set the bool out param.
+ *  @return true if no error occurred, false otherwise (use realm_get_last_error for fetching the error)
+ */
+RLM_API bool realm_sync_subscription_set_erase_by_results(realm_flx_sync_mutable_subscription_set_t*,
+                                                          realm_results_t*, bool* erased);
+/**
+ *  Commit the subscription_set passed as parameter (in order that all the changes made will take effect)
+ *  @return pointer to a valid immutable subscription if commit was successful
+ */
+RLM_API realm_flx_sync_subscription_set_t*
+realm_sync_subscription_set_commit(realm_flx_sync_mutable_subscription_set_t*);
+
+/**
+ * Create a task that will open a realm with the specific configuration
+ * and also download all changes from the sync server.
+ *
+ * Use @a realm_async_open_task_start() to start the download process.
+ */
+RLM_API realm_async_open_task_t* realm_open_synchronized(realm_config_t*) RLM_API_NOEXCEPT;
+RLM_API void realm_async_open_task_start(realm_async_open_task_t*, realm_async_open_task_completion_func_t,
+                                         realm_userdata_t userdata,
+                                         realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+RLM_API void realm_async_open_task_cancel(realm_async_open_task_t*) RLM_API_NOEXCEPT;
+RLM_API uint64_t realm_async_open_task_register_download_progress_notifier(
+    realm_async_open_task_t*, realm_sync_progress_func_t, realm_userdata_t userdata,
+    realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+RLM_API void realm_async_open_task_unregister_download_progress_notifier(realm_async_open_task_t*,
+                                                                         uint64_t token) RLM_API_NOEXCEPT;
+/**
+ * Get the sync session for a specific realm.
+ *
+ * This function will not fail if the realm wasn't open with a sync configuration in place,
+ * but just return NULL;
+ *
+ * @return A non-null pointer if a session exists.
+ */
+RLM_API realm_sync_session_t* realm_sync_session_get(const realm_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Fetch state for the session passed as parameter
+ * @param session ptr to the sync session to retrieve the state for
+ * @return realm_sync_session_state_e value
+ */
+RLM_API realm_sync_session_state_e realm_sync_session_get_state(const realm_sync_session_t* session) RLM_API_NOEXCEPT;
+
+/**
+ * Fetch connection state for the session passed as parameter
+ * @param session ptr to the sync session to retrieve the state for
+ * @return realm_sync_connection_state_e value
+ */
+RLM_API realm_sync_connection_state_e realm_sync_session_get_connection_state(const realm_sync_session_t* session)
+    RLM_API_NOEXCEPT;
+
+/**
+ * Fetch user for the session passed as parameter
+ * @param session ptr to the sync session to retrieve the user for
+ * @return ptr to realm_user_t
+ */
+RLM_API realm_user_t* realm_sync_session_get_user(const realm_sync_session_t* session) RLM_API_NOEXCEPT;
+
+/**
+ * Fetch partition value for the session passed as parameter
+ * @param session ptr to the sync session to retrieve the partition value for
+ * @return a string containing the partition value
+ */
+RLM_API const char* realm_sync_session_get_partition_value(const realm_sync_session_t* session) RLM_API_NOEXCEPT;
+
+/**
+ * Get the filesystem path of the realm file backing this session.
+ */
+RLM_API const char* realm_sync_session_get_file_path(const realm_sync_session_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Ask the session to pause synchronization.
+ *
+ * No-op if the session is already inactive.
+ */
+RLM_API void realm_sync_session_pause(realm_sync_session_t*) RLM_API_NOEXCEPT;
+
+/**
+ * Ask the session to resume synchronization.
+ *
+ * No-op if the session is already active.
+ */
+RLM_API void realm_sync_session_resume(realm_sync_session_t*) RLM_API_NOEXCEPT;
+
+/**
+ * In case manual reset is needed, run this function in order to reset sync client files.
+ * The sync_path is going to passed into realm_sync_error_handler_func_t, if manual reset is needed.
+ * This function is supposed to be called inside realm_sync_error_handler_func_t callback, if sync client reset is
+ * needed
+ * @param realm_app ptr to realm app.
+ * @param sync_path path where the sync files are.
+ * @return true if operation was succesful
+ */
+RLM_API bool realm_sync_immediately_run_file_actions(realm_app_t* realm_app, const char* sync_path) RLM_API_NOEXCEPT;
+
+/**
+ * Register a callback that will be invoked every time the session's connection state changes.
+ *
+ * @return A token value that can be used to unregiser the callback.
+ */
+RLM_API uint64_t realm_sync_session_register_connection_state_change_callback(
+    realm_sync_session_t*, realm_sync_connection_state_changed_func_t, realm_userdata_t userdata,
+    realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+
+/**
+ * Unregister a callback that will be invoked every time the session's connection state changes.
+ * @param session ptr to a valid sync session
+ * @param token the token returned by `realm_sync_session_register_connection_state_change_callback`
+ */
+RLM_API void realm_sync_session_unregister_connection_state_change_callback(realm_sync_session_t* session,
+                                                                            uint64_t token) RLM_API_NOEXCEPT;
+
+/**
+ * Register a callback that will be invoked every time the session reports progress.
+ *
+ * @param is_streaming If true, then the notifier will be called forever, and will
+ *                     always contain the most up-to-date number of downloadable or uploadable bytes.
+ *                     Otherwise, the number of downloaded or uploaded bytes will always be reported
+ *                     relative to the number of downloadable or uploadable bytes at the point in time
+ *                     when the notifier was registered.
+ * @return A token value that can be used to unregiser the notifier.
+ */
+RLM_API uint64_t realm_sync_session_register_progress_notifier(
+    realm_sync_session_t*, realm_sync_progress_func_t, realm_sync_progress_direction_e, bool is_streaming,
+    realm_userdata_t userdata, realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+
+
+/**
+ * Unregister a callback that will be invoked every time the session reports progress.
+ * @param session ptr to a valid sync session
+ * @param token the token returned by `realm_sync_session_register_progress_notifier`
+ */
+RLM_API void realm_sync_session_unregister_progress_notifier(realm_sync_session_t* session,
+                                                             uint64_t token) RLM_API_NOEXCEPT;
+
+/**
+ * Register a callback that will be invoked when all pending downloads have completed.
+ */
+RLM_API void
+realm_sync_session_wait_for_download_completion(realm_sync_session_t*, realm_sync_wait_for_completion_func_t,
+                                                realm_userdata_t userdata,
+                                                realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+
+/**
+ * Register a callback that will be invoked when all pending uploads have completed.
+ */
+RLM_API void realm_sync_session_wait_for_upload_completion(realm_sync_session_t*,
+                                                           realm_sync_wait_for_completion_func_t,
+                                                           realm_userdata_t userdata,
+                                                           realm_free_userdata_func_t userdata_free) RLM_API_NOEXCEPT;
+
+/**
+ * Wrapper for SyncSession::OnlyForTesting::handle_error. This routine should be used only for testing.
+ * @param session ptr to a valid sync session
+ * @param error_code error code to simulate
+ * @param category category of the error to simulate
+ * @param error_message string representing the error
+ * @param is_fatal boolean to signal if the error is fatal or not
+ */
+RLM_API void realm_sync_session_handle_error_for_testing(const realm_sync_session_t* session, int error_code,
+                                                         int category, const char* error_message, bool is_fatal);
+
+/**
+ * In case of exception thrown in user code callbacks, this api will allow the sdk to store the user code exception
+ * and retrieve a it later via realm_get_last_error.
+ * Most importantly the SDK is responsible to handle the memory pointed by usercode_error.
+ * @param usercode_error pointer representing whatever object the SDK treats as exception/error.
+ */
+RLM_API void realm_register_user_code_callback_error(void* usercode_error) RLM_API_NOEXCEPT;
+
+
+typedef struct realm_mongodb_collection realm_mongodb_collection_t;
+
+typedef struct realm_mongodb_find_options {
+    realm_string_t projection_bson;
+    realm_string_t sort_bson;
+    int64_t limit;
+} realm_mongodb_find_options_t;
+
+typedef struct realm_mongodb_find_one_and_modify_options {
+    realm_string_t projection_bson;
+    realm_string_t sort_bson;
+    bool upsert;
+    bool return_new_document;
+} realm_mongodb_find_one_and_modify_options_t;
+
+typedef void (*realm_mongodb_callback_t)(realm_userdata_t userdata, realm_string_t bson,
+                                         realm_app_error_t* app_error);
+
+/**
+ *  Get mongo db collection from realm mongo db client
+ *  @param user ptr to the sync realm user of which we want to retrieve the remote collection for
+ *  @param service name of the service where the collection will be found
+ *  @param database name of the database where the collection will be found
+ *  @param collection name of the collection to fetch
+ *  @return a ptr to a valid mongodb collection if such collection exists, nullptr otherwise
+ */
+RLM_API realm_mongodb_collection_t* realm_mongo_collection_get(realm_user_t* user, const char* service,
+                                                               const char* database, const char* collection);
+
+/**
+ *  Implement find for mongodb collection
+ *  @param collection ptr to the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param options set of possible options to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_find(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                         const realm_mongodb_find_options_t* options, realm_userdata_t data,
+                                         realm_free_userdata_func_t delete_data, realm_mongodb_callback_t callback);
+
+/**
+ *  Implement find_one for mongodb collection
+ *  @param collection ptr to the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param options set of possible options to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_find_one(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                             const realm_mongodb_find_options_t* options, realm_userdata_t data,
+                                             realm_free_userdata_func_t delete_data,
+                                             realm_mongodb_callback_t callback);
+
+/**
+ *  Implement aggregate for mongodb collection
+ *  @param collection ptr to the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_aggregate(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                              realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                              realm_mongodb_callback_t callback);
+
+/**
+ *  Implement count for mongodb collection
+ *  @param collection ptr to the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param limit number of collectio
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_count(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                          int64_t limit, realm_userdata_t data,
+                                          realm_free_userdata_func_t delete_data, realm_mongodb_callback_t callback);
+
+/**
+ *  Implement insert_one for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_insert_one(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                               realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                               realm_mongodb_callback_t callback);
+
+/**
+ *  Implement insert_many for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_insert_many(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                                realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                                realm_mongodb_callback_t callback);
+
+/**
+ *  Implement delete_one for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_delete_one(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                               realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                               realm_mongodb_callback_t callback);
+
+/**
+ *  Implement delete_many for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ */
+RLM_API bool realm_mongo_collection_delete_many(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                                realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                                realm_mongodb_callback_t callback);
+
+/**
+ *  Implement update_one for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param update_ejson extended json string serialization representing the update to apply to this operation
+ *  @param upsert boolean flag to set for enable or disable upsert for the collection
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_update_one(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                               realm_string_t update_ejson, bool upsert, realm_userdata_t data,
+                                               realm_free_userdata_func_t delete_data,
+                                               realm_mongodb_callback_t callback);
+
+/**
+ *  Implement update_many for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param update_ejson extended json string serialization representing the update to apply to this operation
+ *  @param upsert boolean flag to set for enable or disable upsert for the collection
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_update_many(realm_mongodb_collection_t* collection, realm_string_t filter_ejson,
+                                                realm_string_t update_ejson, bool upsert, realm_userdata_t data,
+                                                realm_free_userdata_func_t delete_data,
+                                                realm_mongodb_callback_t callback);
+
+/**
+ *  Implement find one and update for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param update_ejson extended json string serialization representing the update to apply to this operation
+ *  @param options set of possible options to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_find_one_and_update(realm_mongodb_collection_t* collection,
+                                                        realm_string_t filter_ejson, realm_string_t update_ejson,
+                                                        const realm_mongodb_find_one_and_modify_options_t* options,
+                                                        realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                                        realm_mongodb_callback_t callback);
+
+/**
+ *  Implement find_one and replace for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param replacement_ejson extended json string serialization representing the replacement object to apply to this
+ * operation
+ *  @param options set of possible options to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_find_one_and_replace(
+    realm_mongodb_collection_t* collection, realm_string_t filter_ejson, realm_string_t replacement_ejson,
+    const realm_mongodb_find_one_and_modify_options_t* options, realm_userdata_t data,
+    realm_free_userdata_func_t delete_data, realm_mongodb_callback_t callback);
+
+/**
+ *  Implement find_one and delete  for mongodb collection
+ *  @param collection name of the collection to fetch from
+ *  @param filter_ejson extended json string serialization representing the filter to apply to this operation
+ *  @param options set of possible options to apply to this operation
+ *  @param data user data to pass down to this function
+ *  @param delete_data deleter for user data
+ *  @param callback to invoke with the result
+ *  @return True if completes successfully, False otherwise
+ */
+RLM_API bool realm_mongo_collection_find_one_and_delete(realm_mongodb_collection_t* collection,
+                                                        realm_string_t filter_ejson,
+                                                        const realm_mongodb_find_one_and_modify_options_t* options,
+                                                        realm_userdata_t data, realm_free_userdata_func_t delete_data,
+                                                        realm_mongodb_callback_t callback);
+
 
 #endif // REALM_H

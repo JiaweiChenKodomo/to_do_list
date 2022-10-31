@@ -27,6 +27,7 @@
 #import "RLMQueryUtil.hpp"
 #import "RLMRealm_Private.hpp"
 #import "RLMSchema.h"
+#import "RLMSectionedResults_Private.hpp"
 #import "RLMThreadSafeReference_Private.hpp"
 #import "RLMUtil.hpp"
 
@@ -380,6 +381,34 @@ static void ensureInWriteTransaction(NSString *message, RLMManagedSet *set, RLMM
     });
 }
 
+- (NSArray *)objectsAtIndexes:(NSIndexSet *)indexes {
+    size_t count = self.count;
+    NSMutableArray *result = [[NSMutableArray alloc] initWithCapacity:indexes.count];
+    RLMAccessorContext context(*_objectInfo);
+    for (NSUInteger i = indexes.firstIndex; i != NSNotFound; i = [indexes indexGreaterThanIndex:i]) {
+        if (i >= count) {
+            return nil;
+        }
+        [result addObject:_backingSet.get(context, i)];
+    }
+    return result;
+}
+
+- (id)firstObject {
+    return translateErrors([&] {
+        RLMAccessorContext context(*_objectInfo);
+        return _backingSet.size() ? _backingSet.get(context, 0) : nil;
+    });
+}
+
+- (id)lastObject {
+    return translateErrors([&] {
+        RLMAccessorContext context(*_objectInfo);
+        size_t size = _backingSet.size();
+        return size ? _backingSet.get(context, size - 1) : nil;
+    });
+}
+
 - (id)valueForKeyPath:(NSString *)keyPath {
     if ([keyPath hasPrefix:@"@"]) {
         // Delegate KVC collection operators to RLMResults
@@ -481,6 +510,19 @@ static void ensureInWriteTransaction(NSString *message, RLMManagedSet *set, RLMM
     auto query = RLMPredicateToQuery(predicate, _objectInfo->rlmObjectSchema, _realm.schema, _realm.group);
     auto results = translateErrors([&] { return _backingSet.filter(std::move(query)); });
     return [RLMResults resultsWithObjectInfo:*_objectInfo results:std::move(results)];
+}
+
+- (RLMSectionedResults *)sectionedResultsSortedUsingKeyPath:(NSString *)keyPath
+                                                  ascending:(BOOL)ascending
+                                                   keyBlock:(RLMSectionedResultsKeyBlock)keyBlock {
+    return [[RLMSectionedResults alloc] initWithResults:[self sortedResultsUsingKeyPath:keyPath ascending:ascending]
+                                               keyBlock:keyBlock];
+}
+
+- (RLMSectionedResults *)sectionedResultsUsingSortDescriptors:(NSArray<RLMSortDescriptor *> *)sortDescriptors
+                                                     keyBlock:(RLMSectionedResultsKeyBlock)keyBlock {
+    return [[RLMSectionedResults alloc] initWithResults:[self sortedResultsUsingDescriptors:sortDescriptors]
+                                               keyBlock:keyBlock];
 }
 
 - (void)addObserver:(id)observer

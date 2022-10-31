@@ -20,9 +20,10 @@
 #define REALM_BACKGROUND_COLLECTION_HPP
 
 #include <realm/object-store/impl/deep_change_checker.hpp>
-#include <realm/object-store/util/checked_mutex.hpp>
 
 #include <realm/util/assert.hpp>
+#include <realm/util/checked_mutex.hpp>
+#include <realm/util/functional.hpp>
 #include <realm/version_id.hpp>
 #include <realm/table_ref.hpp>
 
@@ -136,10 +137,6 @@ public:
     // precondition: RealmCoordinator::m_notifier_mutex is locked
     bool package_for_delivery() REQUIRES(!m_callback_mutex);
 
-    // Pass the given error to all registered callbacks, then remove them
-    // precondition: RealmCoordinator::m_notifier_mutex is unlocked
-    void deliver_error(std::exception_ptr) REQUIRES(!m_callback_mutex);
-
     // Call each of the given callbacks with the changesets prepared by package_for_delivery()
     // precondition: RealmCoordinator::m_notifier_mutex is unlocked
     void before_advance() REQUIRES(!m_callback_mutex);
@@ -187,14 +184,14 @@ protected:
     bool any_related_table_was_modified(TransactionChangeInfo const&) const noexcept;
 
     // Creates and returns a `DeepChangeChecker` or `KeyPathChecker` depending on the given KeyPathArray.
-    std::function<bool(ObjectChangeSet::ObjectKeyType)> get_modification_checker(TransactionChangeInfo const&,
-                                                                                 ConstTableRef)
+    util::UniqueFunction<bool(ObjKey)> get_modification_checker(TransactionChangeInfo const&, ConstTableRef)
         REQUIRES(!m_callback_mutex);
 
     // Creates and returns a `ObjectKeyPathChangeChecker` which behaves slightly different that `DeepChangeChecker`
     // and `KeyPathChecker` which are used for `Collection`s.
-    std::function<std::vector<int64_t>(ObjectChangeSet::ObjectKeyType)>
-    get_object_modification_checker(TransactionChangeInfo const&, ConstTableRef) REQUIRES(!m_callback_mutex);
+    util::UniqueFunction<std::vector<ColKey>(ObjKey)> get_object_modification_checker(TransactionChangeInfo const&,
+                                                                                      ConstTableRef)
+        REQUIRES(!m_callback_mutex);
 
     // Returns a vector containing all `KeyPathArray`s from all `NotificationCallback`s attached to this notifier.
     void recalculate_key_path_array() REQUIRES(m_callback_mutex);
@@ -247,7 +244,6 @@ private:
     std::shared_ptr<Transaction> m_sg;
 
     bool m_has_run = false;
-    bool m_error = false;
     bool m_has_delivered_root_deletion_event = false;
 
     // Cached check for if callbacks have keypath filters which can be used
@@ -333,8 +329,7 @@ public:
 class NotifierPackage {
 public:
     NotifierPackage() = default;
-    NotifierPackage(std::exception_ptr error, std::vector<std::shared_ptr<CollectionNotifier>> notifiers,
-                    RealmCoordinator* coordinator);
+    NotifierPackage(std::vector<std::shared_ptr<CollectionNotifier>> notifiers, RealmCoordinator* coordinator);
 
     explicit operator bool() const noexcept
     {
@@ -366,7 +361,6 @@ private:
     std::vector<std::shared_ptr<CollectionNotifier>> m_notifiers;
 
     RealmCoordinator* m_coordinator = nullptr;
-    std::exception_ptr m_error;
 };
 
 } // namespace _impl

@@ -11,50 +11,98 @@ import UIKit
 
 class EntryViewController: UIViewController, UITextFieldDelegate {
 
-    @IBOutlet var textField: UITextField!
-    @IBOutlet var textFieldBudget: UITextField!
-    @IBOutlet var datePicker: UIDatePicker!
+    var textField = UITextField()
+    var textFieldBudget = UITextField()
+    var datePicker = UIDatePicker()
 
     private let realm = try! Realm()
     public var completionHandler: (() -> Void)?
     
+    var textFieldItem = UITextField()
+    var textFieldBGTTitle = UITextField()
+    var textFieldDLTitle = UITextField()
+    
     var textFieldBatchNo = UITextField()
     var textFieldStep = UITextField()
     
-    var firstEdit = true
+    var yOffset = 160
+    var textHeight = 21
+    var fieldHeight = 52
+    var sSpacing = 5
+    var bSpacing = 15
+    var startY = 0
+    var xOffset = 50
+    //var firstEdit = true
 
     override func viewDidLoad() {
         super.viewDidLoad()
-
+        
+        startY += yOffset
+        
+        textFieldItem.frame = CGRect(x: xOffset, y: startY, width: 110, height: textHeight)
+        textFieldItem.text = "Item"
+        self.view.addSubview(textFieldItem)
+        
+        startY += textHeight+sSpacing
         textField.becomeFirstResponder()
         textField.delegate = self
-        datePicker.setDate(Date(), animated: true)
+        textField.frame = CGRect(x: xOffset, y: startY, width: 274, height: fieldHeight)
+        textField.borderStyle = UITextField.BorderStyle.roundedRect
+        self.view.addSubview(textField)
+        
+        startY += fieldHeight+bSpacing
+        textFieldBGTTitle.frame = CGRect(x: xOffset, y: startY, width: 56, height: textHeight)
+        textFieldBGTTitle.text = "Budget"
+        self.view.addSubview(textFieldBGTTitle)
+        
+        startY += textHeight+sSpacing
         textFieldBudget.delegate = self
+        textFieldBudget.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldBudget.frame = CGRect(x: xOffset, y: startY, width: 274, height: fieldHeight)
+        self.view.addSubview(textFieldBudget)
+        
+        startY += fieldHeight+bSpacing
+        textFieldDLTitle.frame = CGRect(x: xOffset, y: startY, width: 67, height: textHeight)
+        textFieldDLTitle.text = "Deadline"
+        self.view.addSubview(textFieldDLTitle)
+        
+        startY += textHeight+sSpacing
+        datePicker.setDate(Date(), animated: true)
+        datePicker.frame = CGRect(x: 30, y: startY, width: 320, height: fieldHeight)
+        datePicker.contentHorizontalAlignment = .center
+        self.view.addSubview(datePicker)
         
         textFieldBatchNo.delegate = self
         textFieldStep.delegate = self
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(didTapSaveButton))
         
+        startY += fieldHeight+bSpacing+100
+        textFieldBatchNo.delegate = self
+        textFieldBatchNo.frame = CGRect(x: 15, y: startY, width: 150, height: 50)
+        textFieldBatchNo.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldBatchNo.text = "Repeat # times"
+        textFieldBatchNo.clearsOnBeginEditing = true
+        self.view.addSubview(textFieldBatchNo)
+        
+        textFieldStep.delegate = self
+        textFieldStep.frame = CGRect(x: 210, y: startY, width: 150, height: 50)
+        textFieldStep.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldStep.text = "Every # days"
+        textFieldStep.clearsOnBeginEditing = true
+        self.view.addSubview(textFieldStep)
+        
+        startY += fieldHeight+bSpacing
+        
         let BatchBut = UIButton(type: .system)
-        BatchBut.frame = CGRect(x: 110, y: 700, width: 150, height: 50)
+        BatchBut.frame = CGRect(x: 110, y: startY, width: 150, height: 50)
         BatchBut.setTitle("Add Repeated Items", for: .normal)
         BatchBut.layer.borderWidth = 1.0
         BatchBut.layer.borderColor = UIColor.blue.cgColor
         BatchBut.addTarget(self, action: #selector(didBatch), for: .touchUpInside)
         self.view.addSubview(BatchBut)
         
-        textFieldBatchNo.delegate = self
-        textFieldBatchNo.frame = CGRect(x: 15, y: 600, width: 150, height: 50)
-        textFieldBatchNo.borderStyle = UITextField.BorderStyle.roundedRect
-        textFieldBatchNo.text = "Repeat # times"
-        self.view.addSubview(textFieldBatchNo)
         
-        textFieldStep.delegate = self
-        textFieldStep.frame = CGRect(x: 210, y: 600, width: 150, height: 50)
-        textFieldStep.borderStyle = UITextField.BorderStyle.roundedRect
-        textFieldStep.text = "Every # days"
-        self.view.addSubview(textFieldStep)
     }
     
     @objc func didBatch() {
@@ -86,9 +134,10 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     
     func textFieldDidBeginEditing(_ textField: UITextField) {
         //print("Begin!")
-        if (firstEdit) {
+        //print(textField.clearsOnBeginEditing)
+        if (textField.clearsOnBeginEditing) {
             textField.text = ""
-            firstEdit = false
+            textField.clearsOnBeginEditing = false
         }
     }
 

@@ -71,11 +71,12 @@ struct CreatePolicy {
 class Object {
 public:
     Object();
-    Object(std::shared_ptr<Realm> r, Obj const& o);
-    Object(std::shared_ptr<Realm> r, ObjectSchema const& s, Obj const& o);
-    Object(std::shared_ptr<Realm> r, StringData object_type, ObjKey key);
-    Object(std::shared_ptr<Realm> r, StringData object_type, size_t index);
-    Object(std::shared_ptr<Realm> r, ObjLink link);
+    Object(const std::shared_ptr<Realm>& r, Obj const& o);
+    Object(const std::shared_ptr<Realm>& r, ObjectSchema const& s, Obj const& o, Obj const& parent = {},
+           ColKey incoming_column = {});
+    Object(const std::shared_ptr<Realm>& r, StringData object_type, ObjKey key);
+    Object(const std::shared_ptr<Realm>& r, StringData object_type, size_t index);
+    Object(const std::shared_ptr<Realm>& r, ObjLink link);
 
     Object(Object const&);
     Object(Object&&);
@@ -106,7 +107,8 @@ public:
         return m_obj.is_valid();
     }
 
-    // Returns a frozen copy of this object.
+    // Freeze a copy of this object in the context of the frozen Realm.
+    // Equivalent to producing a thread-safe reference and resolving it in the frozen realm.
     Object freeze(std::shared_ptr<Realm> frozen_realm) const;
 
     // Returns whether or not this Object is frozen.
@@ -184,10 +186,14 @@ private:
     friend class Results;
 
     std::shared_ptr<Realm> m_realm;
-    const ObjectSchema* m_object_schema;
     Obj m_obj;
+    const ObjectSchema* m_object_schema;
     _impl::CollectionNotifier::Handle<_impl::ObjectNotifier> m_notifier;
 
+    Object(std::shared_ptr<Realm> r, const ObjectSchema* s, Obj const& o, Obj const& parent = {},
+           ColKey incoming_column = {});
+    template <typename Key>
+    Object(const std::shared_ptr<Realm>& r, const ObjectSchema* s, Key key);
 
     template <typename ValueType, typename ContextType>
     void set_property_value_impl(ContextType& ctx, const Property& property, ValueType value, CreatePolicy policy,

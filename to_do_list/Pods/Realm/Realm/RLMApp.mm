@@ -40,26 +40,28 @@ namespace {
     /// Internal transport struct to bridge RLMNetworkingTransporting to the GenericNetworkTransport.
     class CocoaNetworkTransport : public realm::app::GenericNetworkTransport {
     public:
-        CocoaNetworkTransport(id<RLMNetworkTransport> transport) : m_transport(transport) {};
+        CocoaNetworkTransport(id<RLMNetworkTransport> transport) : m_transport(transport) {}
 
-        void send_request_to_server(const app::Request request,
-                                    std::function<void(const app::Response)> completion) override {
+        void send_request_to_server(app::Request&& request,
+                                    util::UniqueFunction<void(const app::Response&)>&& completion) override {
             // Convert the app::Request to an RLMRequest
             auto rlmRequest = [RLMRequest new];
             rlmRequest.url = @(request.url.data());
             rlmRequest.body = @(request.body.data());
             NSMutableDictionary *headers = [NSMutableDictionary new];
-            for (auto header : request.headers) {
+            for (auto&& header : request.headers) {
                 headers[@(header.first.data())] = @(header.second.data());
             }
             rlmRequest.headers = headers;
             rlmRequest.method = static_cast<RLMHTTPMethod>(request.method);
-            rlmRequest.timeout = request.timeout_ms / 1000;
+            rlmRequest.timeout = request.timeout_ms / 1000.0;
 
             // Send the request through to the Cocoa level transport
+            auto completion_ptr = completion.release();
             [m_transport sendRequestToServer:rlmRequest completion:^(RLMResponse *response) {
-                __block std::map<std::string, std::string> bridgingHeaders;
-                [response.headers enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *value, BOOL *) {
+                util::UniqueFunction<void(const app::Response&)> completion(completion_ptr);
+                std::map<std::string, std::string> bridgingHeaders;
+                [response.headers enumerateKeysAndObjectsUsingBlock:[&](NSString *key, NSString *value, BOOL *) {
                     bridgingHeaders[key.UTF8String] = value.UTF8String;
                 }];
 
@@ -96,6 +98,13 @@ namespace {
     return nil;
 }
 
+- (instancetype)init {
+    return [self initWithBaseURL:nil
+                       transport:nil
+                    localAppName:nil
+                 localAppVersion:nil];
+}
+
 - (instancetype)initWithBaseURL:(nullable NSString *)baseURL
                       transport:(nullable id<RLMNetworkTransport>)transport
                    localAppName:(nullable NSString *)localAppName
@@ -104,12 +113,12 @@ namespace {
                        transport:transport
                     localAppName:localAppName
                  localAppVersion:localAppVersion
-         defaultRequestTimeoutMS:6000];
+         defaultRequestTimeoutMS:60000];
 }
 
 - (instancetype)initWithBaseURL:(nullable NSString *)baseURL
                       transport:(nullable id<RLMNetworkTransport>)transport
-                   localAppName:(NSString *)localAppName
+                   localAppName:(nullable NSString *)localAppName
                 localAppVersion:(nullable NSString *)localAppVersion
         defaultRequestTimeoutMS:(NSUInteger)defaultRequestTimeoutMS {
     if (self = [super init]) {
@@ -147,24 +156,19 @@ namespace {
 - (void)setBaseURL:(nullable NSString *)baseURL {
     std::string base_url;
     RLMNSStringToStdString(base_url, baseURL);
-    _config.base_url = base_url.empty() ? util::none : util::Optional(base_url);
+    _config.base_url = base_url.empty() ? util::none : std::optional(base_url);
     return;
 }
 
 - (id<RLMNetworkTransport>)transport {
-    return static_cast<CocoaNetworkTransport*>(_config.transport_generator().get())->transport();
+    return static_cast<CocoaNetworkTransport&>(*_config.transport).transport();
 }
 
 - (void)setTransport:(id<RLMNetworkTransport>)transport {
-    if (transport) {
-        _config.transport_generator = [transport]{
-            return std::make_unique<CocoaNetworkTransport>(transport);
-        };
-    } else {
-        _config.transport_generator = []{
-            return std::make_unique<CocoaNetworkTransport>([RLMNetworkTransport new]);
-        };
+    if (!transport) {
+        transport = [RLMNetworkTransport new];
     }
+    _config.transport = std::make_shared<CocoaNetworkTransport>(transport);
 }
 
 - (NSString *)localAppName {
@@ -178,7 +182,7 @@ namespace {
 - (void)setLocalAppName:(nullable NSString *)localAppName {
     std::string local_app_name;
     RLMNSStringToStdString(local_app_name, localAppName);
-    _config.local_app_name = local_app_name.empty() ? util::none : util::Optional(local_app_name);
+    _config.local_app_name = local_app_name.empty() ? util::none : std::optional(local_app_name);
     return;
 }
 
@@ -193,12 +197,12 @@ namespace {
 - (void)setLocalAppVersion:(nullable NSString *)localAppVersion {
     std::string local_app_version;
     RLMNSStringToStdString(local_app_version, localAppVersion);
-    _config.local_app_version = local_app_version.empty() ? util::none : util::Optional(local_app_version);
+    _config.local_app_version = local_app_version.empty() ? util::none : std::optional(local_app_version);
     return;
 }
 
 - (NSUInteger)defaultRequestTimeoutMS {
-    return _config.default_request_timeout_ms.value_or(6000U);
+    return _config.default_request_timeout_ms.value_or(60000U);
 }
 
 - (void)setDefaultRequestTimeoutMS:(NSUInteger)defaultRequestTimeoutMS {
@@ -288,9 +292,9 @@ NSError *RLMAppErrorToNSError(realm::app::AppError const& appError) {
 static NSMutableDictionary *s_apps = [NSMutableDictionary new];
 static std::mutex& s_appMutex = *new std::mutex();
 
-+ (NSArray *)appIds {
++ (NSArray *)allApps {
     std::lock_guard<std::mutex> lock(s_appMutex);
-    return s_apps.allKeys;
+    return s_apps.allValues;
 }
 
 + (void)resetAppCache {
@@ -346,7 +350,7 @@ static std::mutex& s_appMutex = *new std::mutex();
 
 - (void)loginWithCredential:(RLMCredentials *)credentials
                  completion:(RLMUserCompletionBlock)completionHandler {
-    auto completion = ^(std::shared_ptr<SyncUser> user, util::Optional<app::AppError> error) {
+    auto completion = ^(std::shared_ptr<SyncUser> user, std::optional<app::AppError> error) {
         if (error && error->error_code) {
             return completionHandler(nil, RLMAppErrorToNSError(*error));
         }

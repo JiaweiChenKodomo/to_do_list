@@ -98,6 +98,7 @@ static inline NSString *RLMTypeToString(RLMPropertyType type) {
 @property (nonatomic, assign) ptrdiff_t swiftIvar;
 @property (nonatomic, assign, nullable) Class swiftAccessor;
 @property (nonatomic, readwrite, assign) RLMPropertyType dictionaryKeyType;
+@property (nonatomic, readwrite) BOOL customMappingIsOptional;
 
 // getter and setter names
 @property (nonatomic, copy) NSString *getterName;
@@ -106,6 +107,7 @@ static inline NSString *RLMTypeToString(RLMPropertyType type) {
 @property (nonatomic, nullable) SEL setterSel;
 
 - (RLMProperty *)copyWithNewName:(NSString *)name;
+- (NSString *)typeName;
 
 @end
 
@@ -113,7 +115,7 @@ static inline NSString *RLMTypeToString(RLMPropertyType type) {
 /**
  This method is useful only in specialized circumstances, for example, in conjunction with
  +[RLMObjectSchema initWithClassName:objectClass:properties:]. If you are simply building an
- app on Realm, it is not recommened to use this method.
+ app on Realm, it is not recommended to use this method.
 
  Initialize an RLMProperty
 

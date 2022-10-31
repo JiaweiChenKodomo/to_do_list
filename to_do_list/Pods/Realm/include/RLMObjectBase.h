@@ -90,7 +90,7 @@ NS_ASSUME_NONNULL_BEGIN
 
  ### Relationships
 
- See our [Cocoa guide](http://realm.io/docs/cocoa) for more details.
+ See our [Objective-C guide](https://docs.mongodb.com/realm/sdk/swift/fundamentals/relationships/) for more details.
  */
 @interface RealmSwiftObject : RLMObjectBase
 @end
@@ -131,6 +131,33 @@ NS_ASSUME_NONNULL_BEGIN
  ```
  */
 @interface RealmSwiftEmbeddedObject : RLMObjectBase
+@end
+
+/**
+ `AsymmetricObject` is a base class used to define asymmetric Realm objects.
+
+ Asymmetric objects can only be created using the `create(_ object:)`
+ function, and cannot be added, removed or queried.
+ When created, asymmetric objects will be synced unidirectionally to the MongoDB
+ database and cannot be accessed locally.
+
+ Incoming links from any asymmetric table are not allowed, meaning embedding
+ an asymmetric object within an `Object` will throw an error.
+
+ The property types supported on `AsymmetricObject` are the same as for `Object`,
+ except for that asymmetric objects can only link to embedded objects, so `Object`
+ and `List<Object>` properties are not supported (`EmbeddedObject` and
+ `List<EmbeddedObject>` *are*).
+
+ ```swift
+ class Person: AsymmetricObject {
+     @Persisted(primaryKey: true) var _id: ObjectId = ObjectId.generate()
+     @Persisted var name: String
+     @Persisted var age: Int
+ }
+ ```
+ */
+@interface RealmSwiftAsymmetricObject : RLMObjectBase
 @end
 
 NS_ASSUME_NONNULL_END

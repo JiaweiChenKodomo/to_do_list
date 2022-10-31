@@ -78,6 +78,8 @@ public:
         : m_is_null(true)
     {
     }
+    Timestamp(const Timestamp&) = default;
+
     template <typename C = std::chrono::system_clock, typename D = typename C::duration>
     Timestamp(std::chrono::time_point<C, D> tp)
         : m_is_null(false)
@@ -90,6 +92,8 @@ public:
         : Timestamp(null{})
     {
     }
+
+    Timestamp& operator=(const Timestamp& rhs) = default;
 
     bool is_null() const
     {
@@ -179,7 +183,6 @@ public:
         }
         return *this > rhs || *this == rhs;
     }
-    Timestamp& operator=(const Timestamp& rhs) = default;
 
     size_t hash() const noexcept;
 
@@ -197,6 +200,10 @@ private:
 template <class C, class T>
 inline std::basic_ostream<C, T>& operator<<(std::basic_ostream<C, T>& out, const Timestamp& d)
 {
+    if (d.is_null()) {
+        out << "null";
+        return out;
+    }
     auto seconds = time_t(d.get_seconds());
     struct tm buf;
 #ifdef _MSC_VER

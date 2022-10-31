@@ -16,7 +16,7 @@ import RealmSwift
 
 import SpriteKit
 
-class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDelegate, UITextFieldDelegate, IAxisValueFormatter {
+class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDelegate, UITextFieldDelegate, AxisValueFormatter {
     
     // IValueFormatter formats value ticks on the plot.
     var textField = UITextField()

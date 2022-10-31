@@ -20,6 +20,9 @@ import Foundation
 import Realm
 import Realm.Private
 
+/// The Id of the asynchronous transaction.
+public typealias AsyncTransactionId = RLMAsyncTransactionId
+
 /**
  A `Realm` instance (also referred to as "a Realm") represents a Realm database.
 
@@ -366,6 +369,111 @@ import Realm.Private
         return rlmRealm.inWriteTransaction
     }
 
+// MARK: Asynchronous Transactions
+
+    /**
+     Asynchronously performs actions contained within the given block inside a write transaction.
+     The write transaction is begun asynchronously as if calling `beginAsyncWrite`,
+     and by default the transaction is commited asynchronously after the block completes.
+     You can also explicitly call `commitWrite` or `cancelWrite` from
+     within the block to synchronously commit or cancel the write transaction.
+     Returning without one of these calls is equivalent to calling `commitWrite`.
+
+     @param block The block containing actions to perform.
+
+     @param completionBlock A block which will be called on the source thread or queue
+                        once the commit has either completed or failed with an error.
+
+     @return An id identifying the asynchronous transaction which can be passed to
+             `cancelAsyncWrite` prior to the block being called to cancel
+             the pending invocation of the block.
+    */
+    @discardableResult
+    public func writeAsync(_ block: @escaping () -> Void, onComplete: ((Swift.Error?) -> Void)? = nil) -> AsyncTransactionId {
+        return beginAsyncWrite {
+            block()
+            commitAsyncWrite(onComplete)
+        }
+    }
+
+    /**
+     Begins an asynchronous write transaction.
+     This function asynchronously begins a write transaction on a background
+     thread, and then invokes the block on the original thread or queue once the
+     transaction has begun. Unlike `beginWrite`, this does not block the
+     calling thread if another thread is current inside a write transaction, and
+     will always return immediately.
+     Multiple calls to this function (or the other functions which perform
+     asynchronous write transactions) will queue the blocks to be called in the
+     same order as they were queued. This includes calls from inside a write
+     transaction block, which unlike with synchronous transactions are allowed.
+
+     @param asyncWriteBlock The block containing actions to perform inside the write transaction.
+            `asyncWriteBlock` should end by calling `commitAsyncWrite` or `commitWrite`.
+            Returning without one of these calls is equivalent to calling `cancelAsyncWrite`.
+
+     @return An id identifying the asynchronous transaction which can be passed to
+             `cancelAsyncWrite` prior to the block being called to cancel
+             the pending invocation of the block.
+     */
+    @discardableResult
+    public func beginAsyncWrite(_ asyncWriteBlock: @escaping () -> Void) -> AsyncTransactionId {
+        return rlmRealm.beginAsyncWriteTransaction {
+            asyncWriteBlock()
+        }
+    }
+
+    /**
+     Asynchronously commits a write transaction.
+     The call returns immediately allowing the caller to proceed while the I/O is
+     performed on a dedicated background thread. This can be used regardless of if
+     the write transaction was begun with `beginWrite` or `beginAsyncWrite`.
+
+     @param onComplete A block which will be called on the source thread or queue once the commit
+                     has either completed or failed with an error.
+
+     @param allowGrouping If `true`, multiple sequential calls to `commitAsyncWrite` may be
+                          batched together and persisted to stable storage in one group. This
+                          improves write performance, particularly when the individual transactions
+                          being batched are small. In the event of a crash or power failure,
+                          either all of the grouped transactions will be lost or none will, rather
+                          than the usual guarantee that data has been persisted as
+                          soon as a call to commit has returned.
+
+     @return An id identifying the asynchronous transaction commit can be passed to
+             `cancelAsyncWrite` prior to the completion block being called to cancel
+             the pending invocation of the block. Note that this does *not* cancel the commit itself.
+    */
+    @discardableResult
+    public func commitAsyncWrite(allowGrouping: Bool = false, _ onComplete: ((Swift.Error?) -> Void)? = nil) -> AsyncTransactionId {
+        return rlmRealm.commitAsyncWriteTransaction(onComplete, allowGrouping: allowGrouping)
+    }
+
+    /**
+     Cancels a queued block for an asynchronous transaction.
+     This can cancel a block passed to either an asynchronous begin or an asynchronous commit.
+     Canceling a begin cancels that transaction entirely, while canceling a commit merely cancels
+     the invocation of the completion callback, and the commit will still happen.
+     Transactions can only be canceled before the block is invoked, and calling `cancelAsyncWrite`
+     from within the block is a no-op.
+
+     @param AsyncTransactionId A transaction id from either `beginAsyncWrite` or `commitAsyncWrite`.
+    */
+    public func cancelAsyncWrite(_  asyncTransactionId: AsyncTransactionId) throws {
+        rlmRealm.cancelAsyncTransaction(asyncTransactionId)
+    }
+
+    /**
+     Indicates if the Realm is currently performing async write operations.
+     This becomes `true` following a call to `beginAsyncWrite`, `commitAsyncWrite`,
+     or `writeAsync`, and remains so until all scheduled async write work has completed.
+
+     @warning If this is `true`, closing or invalidating the Realm will block until scheduled work has completed.
+     */
+    public var isPerformingAsynchronousWriteOperations: Bool {
+        return rlmRealm.isPerformingAsynchronousWriteOperations
+    }
+
     // MARK: Adding and Creating objects
 
     /**
@@ -629,7 +737,7 @@ import Realm.Private
      :nodoc:
      */
     public func delete<Element: ObjectBase>(_ objects: Results<Element>) {
-        rlmRealm.deleteObjects(objects.rlmResults)
+        rlmRealm.deleteObjects(objects.collection)
     }
 
     /**
@@ -650,7 +758,7 @@ import Realm.Private
 
      - returns: A `Results` containing the objects.
      */
-    public func objects<Element: Object>(_ type: Element.Type) -> Results<Element> {
+    public func objects<Element: RealmFetchable>(_ type: Element.Type) -> Results<Element> {
         return Results(RLMGetObjects(rlmRealm, type.className(), nil))
     }
 
@@ -915,6 +1023,22 @@ import Realm.Private
     }
 
     /**
+     Writes a copy of the Realm to a given location specified by a given configuration.
+
+     If the configuration supplied is derived from a `User` then this Realm will be copied with
+     sync functionality enabled.
+
+     The destination file cannot already exist.
+
+     - parameter configuration: A Realm Configuration.
+
+     - throws: An `NSError` if the copy could not be written.
+     */
+    public func writeCopy(configuration: Realm.Configuration) throws {
+        try rlmRealm.writeCopy(for: configuration.rlmConfiguration)
+    }
+
+    /**
      Checks if the Realm file for the given configuration exists locally on disk.
 
      For non-synchronized, non-in-memory Realms, this is equivalent to
@@ -960,6 +1084,44 @@ import Realm.Private
     }
 }
 
+// MARK: Sync Subscriptions
+
+extension Realm {
+    /**
+     Returns an instance of `SyncSubscriptionSet`, representing the active subscriptions
+     for this realm, which can be used to add/remove/update and search flexible sync subscriptions.
+     Getting the subscriptions from a local or partition-based configured realm will thrown an exception.
+
+     - returns: A `SyncSubscriptionSet`.
+     - Warning: This feature is currently in beta and its API is subject to change.
+     */
+    @available(*, message: "This feature is currently in beta.")
+    public var subscriptions: SyncSubscriptionSet {
+        return SyncSubscriptionSet(rlmRealm.subscriptions)
+    }
+}
+
+// MARK: Asymmetric Sync
+
+extension Realm {
+    /**
+     Creates an Asymmetric object, which will be synced unidirectionally and
+     cannot be queried locally. Only objects which inherit from `AsymmetricObject`
+     can be created using this method.
+
+     Objects created using this method will not be added to the Realm.
+
+     - warning: This method may only be called during a write transaction.
+
+     - parameter type:   The type of the object to create.
+     - parameter value:  The value used to populate the object.
+     */
+    public func create<T: AsymmetricObject>(_ type: T.Type, value: Any = [:]) {
+        let typeName = (type as AsymmetricObject.Type).className()
+        RLMCreateAsymmetricObjectInRealm(rlmRealm, typeName, value)
+    }
+}
+
 // MARK: Equatable
 
 extension Realm: Equatable {
@@ -1001,8 +1163,8 @@ extension Realm {
 /// The type of a block to run for notification purposes when the data in a Realm is modified.
 public typealias NotificationBlock = (_ notification: Realm.Notification, _ realm: Realm) -> Void
 
-#if swift(>=5.5) && canImport(_Concurrency)
-@available(macOS 12.0, tvOS 15.0, iOS 15.0, watchOS 8.0, *)
+#if swift(>=5.6) && canImport(_Concurrency)
+@available(macOS 10.15, tvOS 13.0, iOS 13.0, watchOS 6.0, *)
 extension Realm {
     /// Options for when to download all data from the server before opening
     /// a synchronized Realm.
@@ -1039,16 +1201,13 @@ extension Realm {
      - parameter configuration: A configuration object to use when opening the Realm.
      - parameter downloadBeforeOpen: When opening the Realm should first download
      all data from the server.
-     - parameter queue: An optional dispatch queue to confine the Realm to. If
-     given, this Realm instance can be used from within
-     blocks dispatched to the given queue rather than on the
-     current thread.
      - throws: An `NSError` if the Realm could not be initialized.
      - returns: An open Realm.
      */
+    @MainActor
     public init(configuration: Realm.Configuration = .defaultConfiguration,
-                downloadBeforeOpen: OpenBehavior = .never,
-                queue: DispatchQueue? = nil) async throws {
+                downloadBeforeOpen: OpenBehavior = .never) async throws {
+        var rlmRealm: RLMRealm?
         switch downloadBeforeOpen {
         case .never:
             break
@@ -1057,17 +1216,37 @@ extension Realm {
                 fallthrough
             }
         case .always:
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
-                RLMRealm.asyncOpen(with: configuration.rlmConfiguration, callback: { error in
+            rlmRealm = try await withCheckedThrowingContinuation { continuation in
+                RLMRealm.asyncOpen(with: configuration.rlmConfiguration, callbackQueue: .main) { (realm, error) in
                     if let error = error {
                         continuation.resume(with: .failure(error))
                     } else {
-                        continuation.resume()
+                        continuation.resume(with: .success(realm!))
                     }
-                })
+                }
             }
         }
-        try self.init(RLMRealm(configuration: configuration.rlmConfiguration, queue: queue))
+        if rlmRealm == nil {
+            rlmRealm = try RLMRealm(configuration: configuration.rlmConfiguration)
+        }
+        self.init(rlmRealm!)
     }
 }
 #endif // swift(>=5.5)
+
+/**
+ Objects which can be feched from the Realm - Object or Projection
+ */
+public protocol RealmFetchable: RealmCollectionValue {
+    /// :nodoc:
+    static func className() -> String
+}
+/// :nodoc:
+extension Object: RealmFetchable {}
+/// :nodoc:
+extension Projection: RealmFetchable {
+    /// :nodoc:
+    public static func className() -> String {
+        return Root.className()
+    }
+}

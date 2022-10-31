@@ -64,6 +64,7 @@
 
 - (instancetype)initWithObjectType:(RLMPropertyType)type optional:(BOOL)optional keyType:(RLMPropertyType)keyType {
     REALM_ASSERT(RLMValidateKeyType(keyType));
+    REALM_ASSERT(type != RLMPropertyTypeObject);
     self = [super init];
     if (self) {
         _type = type;
@@ -490,6 +491,21 @@ static void changeDictionary(__unsafe_unretained RLMDictionary *const dictionary
 }
 
 - (id)objectAtIndex:(NSUInteger)index {
+    @throw RLMException(@"This method is not available on RLMDictionary.");
+}
+
+- (nullable NSArray *)objectsAtIndexes:(nonnull NSIndexSet *)indexes {
+    @throw RLMException(@"This method is not available on RLMDictionary.");
+}
+
+- (RLMSectionedResults *)sectionedResultsSortedUsingKeyPath:(NSString *)keyPath
+                                                  ascending:(BOOL)ascending
+                                                   keyBlock:(RLMSectionedResultsKeyBlock)keyBlock {
+    @throw RLMException(@"This method is not available on RLMDictionary.");
+}
+
+- (RLMSectionedResults *)sectionedResultsUsingSortDescriptors:(NSArray<RLMSortDescriptor *> *)sortDescriptors
+                                                     keyBlock:(RLMSectionedResultsKeyBlock)keyBlock {
     @throw RLMException(@"This method is not available on RLMDictionary.");
 }
 

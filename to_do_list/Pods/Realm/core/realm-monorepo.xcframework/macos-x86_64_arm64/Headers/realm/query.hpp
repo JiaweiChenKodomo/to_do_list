@@ -41,6 +41,7 @@
 #include <realm/timestamp.hpp>
 #include <realm/handover_defs.hpp>
 #include <realm/util/serializer.hpp>
+#include <realm/util/bind_ptr.hpp>
 #include <realm/column_type_traits.hpp>
 
 namespace realm {
@@ -50,7 +51,7 @@ namespace realm {
 class ParentNode;
 class Table;
 class TableView;
-class ConstTableView;
+class TableView;
 class Array;
 class Expression;
 class Group;
@@ -83,8 +84,8 @@ struct QueryGroup {
 
 class Query final {
 public:
-    Query(ConstTableRef table, ConstTableView* tv = nullptr);
-    Query(ConstTableRef table, std::unique_ptr<ConstTableView>);
+    Query(ConstTableRef table, TableView* tv = nullptr);
+    Query(ConstTableRef table, std::unique_ptr<TableView>);
     Query(ConstTableRef table, const ObjList& list);
     Query(ConstTableRef table, LinkCollectionPtr&& list_ptr);
     Query();
@@ -249,13 +250,13 @@ public:
 
 
     // Searching
-    ObjKey find();
-    TableView find_all(size_t start = 0, size_t end = size_t(-1), size_t limit = size_t(-1));
+    ObjKey find() const;
+    TableView find_all(size_t limit = size_t(-1)) const;
 
     // Aggregates
     size_t count() const;
-    TableView find_all(const DescriptorOrdering& descriptor);
-    size_t count(const DescriptorOrdering& descriptor);
+    TableView find_all(const DescriptorOrdering& descriptor) const;
+    size_t count(const DescriptorOrdering& descriptor) const;
     int64_t sum_int(ColKey column_key) const;
     double average_int(ColKey column_key, size_t* resultcount = nullptr) const;
     int64_t maximum_int(ColKey column_key, ObjKey* return_ndx = nullptr) const;
@@ -280,14 +281,19 @@ public:
     Decimal128 average_mixed(ColKey column_key, size_t* resultcount = nullptr) const;
 
     // Deletion
-    size_t remove();
+    size_t remove() const;
 
 #if REALM_MULTITHREAD_QUERY
     // Multi-threading
     TableView find_all_multi(size_t start = 0, size_t end = size_t(-1));
-    ConstTableView find_all_multi(size_t start = 0, size_t end = size_t(-1)) const;
+    TableView find_all_multi(size_t start = 0, size_t end = size_t(-1)) const;
     int set_threads(unsigned int threadcount);
 #endif
+
+    const ConstTableRef& get_table() const noexcept
+    {
+        return m_table;
+    }
 
     ConstTableRef& get_table()
     {
@@ -314,13 +320,14 @@ public:
     // or empty vector if the query is not associated with a table.
     TableVersions sync_view_if_needed() const;
 
-    std::string validate();
+    std::string validate() const;
 
     std::string get_description(const std::string& class_prefix = "") const;
     std::string get_description(util::serializer::SerialisationState& state) const;
 
-    Query& set_ordering(std::unique_ptr<DescriptorOrdering> ordering);
-    std::shared_ptr<DescriptorOrdering> get_ordering();
+    Query& set_ordering(util::bind_ptr<DescriptorOrdering> ordering);
+    // This will remove the ordering from the Query object
+    util::bind_ptr<DescriptorOrdering> get_ordering();
 
     bool eval_object(const Obj& obj) const;
 
@@ -365,7 +372,7 @@ private:
     void aggregate_internal(ParentNode* pn, QueryStateBase* st, size_t start, size_t end,
                             ArrayPayload* source_column) const;
 
-    void find_all(ConstTableView& tv, size_t start = 0, size_t end = size_t(-1), size_t limit = size_t(-1)) const;
+    void do_find_all(TableView& tv, size_t limit) const;
     size_t do_count(size_t limit = size_t(-1)) const;
     void delete_nodes() noexcept;
 
@@ -382,7 +389,7 @@ private:
     void add_node(std::unique_ptr<ParentNode>);
 
     friend class Table;
-    friend class ConstTableView;
+    friend class TableView;
     friend class SubQueryCount;
     friend class PrimitiveListCount;
     friend class metrics::QueryInfo;
@@ -405,9 +412,9 @@ private:
     // this includes: LnkLst, LnkSet, and DictionaryLinkValues. It cannot be a list of primitives because
     // it is used to populate a query through a collection of objects and there are asserts for this.
     LinkCollectionPtr m_source_collection;         // collections are owned by the query.
-    ConstTableView* m_source_table_view = nullptr; // table views are not refcounted, and not owned by the query.
-    std::unique_ptr<ConstTableView> m_owned_source_table_view; // <--- except when indicated here
-    std::shared_ptr<DescriptorOrdering> m_ordering;
+    TableView* m_source_table_view = nullptr;      // table views are not refcounted, and not owned by the query.
+    std::unique_ptr<TableView> m_owned_source_table_view; // <--- except when indicated here
+    util::bind_ptr<DescriptorOrdering> m_ordering;
 };
 
 // Implementation:

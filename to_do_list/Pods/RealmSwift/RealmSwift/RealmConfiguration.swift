@@ -58,7 +58,7 @@ extension Realm {
 
          - parameter fileURL:            The local URL to the Realm file.
          - parameter inMemoryIdentifier: A string used to identify a particular in-memory Realm.
-         - parameter syncConfiguration:  For Realms intended to sync with MongoDB Realm, a sync configuration.
+         - parameter syncConfiguration:  For Realms intended to sync with Atlas App Services, a sync configuration.
          - parameter encryptionKey:      An optional 64-byte key to use to encrypt the data.
          - parameter readOnly:           Whether the Realm is read-only (must be true for read-only files).
          - parameter schemaVersion:      The current schema version.
@@ -72,7 +72,9 @@ extension Realm {
 
                                             Return `true ` to indicate that an attempt to compact the file should be made.
                                             The compaction will be skipped if another process is accessing it.
-         - parameter objectTypes:        The subset of `Object` and `EmbeddedObject` subclasses persisted in the Realm. 
+         - parameter objectTypes:        The subset of `Object` and `EmbeddedObject` subclasses persisted in the Realm.
+         - parameter seedFilePath:       The path to the realm file that will be copied to the fileURL when opened
+                                         for the first time.
         */
         public init(fileURL: URL? = URL(fileURLWithPath: RLMRealmPathForFile("default.realm"), isDirectory: false),
                     inMemoryIdentifier: String? = nil,
@@ -83,7 +85,8 @@ extension Realm {
                     migrationBlock: MigrationBlock? = nil,
                     deleteRealmIfMigrationNeeded: Bool = false,
                     shouldCompactOnLaunch: ((Int, Int) -> Bool)? = nil,
-                    objectTypes: [ObjectBase.Type]? = nil) {
+                    objectTypes: [ObjectBase.Type]? = nil,
+                    seedFilePath: URL? = nil) {
                 self.fileURL = fileURL
                 if let inMemoryIdentifier = inMemoryIdentifier {
                     self.inMemoryIdentifier = inMemoryIdentifier
@@ -98,12 +101,13 @@ extension Realm {
                 self.deleteRealmIfMigrationNeeded = deleteRealmIfMigrationNeeded
                 self.shouldCompactOnLaunch = shouldCompactOnLaunch
                 self.objectTypes = objectTypes
+                self.seedFilePath = seedFilePath
         }
 
         // MARK: Configuration Properties
 
         /**
-         A configuration value used to configure a Realm for synchronization with MongoDB Realm. Mutually
+         A configuration value used to configure a Realm for synchronization with Atlas App Services. Mutually
          exclusive with `inMemoryIdentifier`.
          */
         public var syncConfiguration: SyncConfiguration? {
@@ -243,18 +247,49 @@ extension Realm {
          */
         public var maximumNumberOfActiveVersions: UInt?
 
+        /**
+         When opening the Realm for the first time, instead of creating an empty file,
+         the Realm file will be copied from the provided seed file path and used instead.
+         This can be used to open a Realm file with pre-populated data.
+
+         If a realm file already exists at the configurations's destination path, the seed file
+         will not be copied and the already existing realm will be opened instead.
+
+         Note that to use this parameter with a synced Realm configuration
+         the seed Realm must be appropriately copied to a destination with
+         `Realm.writeCopy(configuration:)` first.
+
+         This option is mutually exclusive with `inMemoryIdentifier`. Setting a `seedFilePath`
+         will nil out the `inMemoryIdentifier`.
+         */
+        public var seedFilePath: URL?
+
+        /**
+         Configuration for Realm event recording. Events are enabled if this is set
+         to a non-nil value.
+         */
+        public var eventConfiguration: EventConfiguration?
+
         /// A custom schema to use for the Realm.
         private var customSchema: RLMSchema?
 
         /// If `true`, disables automatic format upgrades when accessing the Realm.
         internal var disableFormatUpgrade: Bool = false
 
+        // MARK: Flexible Sync
+
+        /// Callback for adding subscriptions to the initialization of the Realm
+        internal var initialSubscriptions: ((SyncSubscriptionSet) -> Void)?
+
+        /// If `true` Indicates that the `initialSubscriptions` will run on every app startup.
+        internal var rerunOnOpen: Bool = false
+
         // MARK: Private Methods
 
         internal var rlmConfiguration: RLMRealmConfiguration {
             let configuration = RLMRealmConfiguration()
             if let syncConfiguration = syncConfiguration {
-                configuration.syncConfiguration = syncConfiguration.asConfig()
+                configuration.syncConfiguration = syncConfiguration.config
             }
             if let fileURL = fileURL {
                 configuration.fileURL = fileURL
@@ -263,19 +298,30 @@ extension Realm {
             } else if syncConfiguration == nil {
                 fatalError("A Realm Configuration must specify a path or an in-memory identifier.")
             }
+            configuration.seedFilePath = self.seedFilePath
             configuration.encryptionKey = self.encryptionKey
             configuration.readOnly = self.readOnly
             configuration.schemaVersion = self.schemaVersion
             configuration.migrationBlock = self.migrationBlock.map { accessorMigrationBlock($0) }
             configuration.deleteRealmIfMigrationNeeded = self.deleteRealmIfMigrationNeeded
-            if let shouldCompactOnLaunch = self.shouldCompactOnLaunch {
-                configuration.shouldCompactOnLaunch = ObjectiveCSupport.convert(object: shouldCompactOnLaunch)
-            } else {
-                configuration.shouldCompactOnLaunch = nil
-            }
+            configuration.shouldCompactOnLaunch = self.shouldCompactOnLaunch.map(ObjectiveCSupport.convert(object:))
             configuration.setCustomSchemaWithoutCopying(self.customSchema)
             configuration.disableFormatUpgrade = self.disableFormatUpgrade
             configuration.maximumNumberOfActiveVersions = self.maximumNumberOfActiveVersions ?? 0
+            if let eventConfiguration = eventConfiguration {
+                let rlmConfig = RLMEventConfiguration()
+                rlmConfig.partitionPrefix = eventConfiguration.partitionPrefix
+                rlmConfig.syncUser = eventConfiguration.syncUser
+                rlmConfig.metadata = eventConfiguration.metadata
+                rlmConfig.logger = eventConfiguration.logger
+                configuration.eventConfiguration = rlmConfig
+            }
+
+            if let initialSubscriptions = initialSubscriptions {
+                configuration.initialSubscriptions = ObjectiveCSupport.convert(block: initialSubscriptions)
+                configuration.rerunOnOpen = rerunOnOpen
+            }
+
             return configuration
         }
 
@@ -283,11 +329,7 @@ extension Realm {
             var configuration = Configuration()
             configuration._path = rlmConfiguration.fileURL?.path
             configuration._inMemoryIdentifier = rlmConfiguration.inMemoryIdentifier
-            if let objcSyncConfig = rlmConfiguration.syncConfiguration {
-                configuration._syncConfiguration = SyncConfiguration(config: objcSyncConfig)
-            } else {
-                configuration._syncConfiguration = nil
-            }
+            configuration._syncConfiguration = rlmConfiguration.syncConfiguration.map(SyncConfiguration.init(config:))
             configuration.encryptionKey = rlmConfiguration.encryptionKey
             configuration.readOnly = rlmConfiguration.readOnly
             configuration.schemaVersion = rlmConfiguration.schemaVersion
@@ -301,6 +343,15 @@ extension Realm {
             configuration.customSchema = rlmConfiguration.customSchema
             configuration.disableFormatUpgrade = rlmConfiguration.disableFormatUpgrade
             configuration.maximumNumberOfActiveVersions = rlmConfiguration.maximumNumberOfActiveVersions
+            if let eventConfiguration = rlmConfiguration.eventConfiguration {
+                configuration.eventConfiguration = EventConfiguration(metadata: eventConfiguration.metadata,
+                                                                      syncUser: eventConfiguration.syncUser,
+                                                                      partitionPrefix: eventConfiguration.partitionPrefix)
+            }
+
+            configuration.initialSubscriptions = ObjectiveCSupport.convert(block: rlmConfiguration.initialSubscriptions)
+            configuration.rerunOnOpen = rlmConfiguration.rerunOnOpen
+
             return configuration
         }
     }

@@ -125,6 +125,10 @@ public:
 
     Mixed(int64_t) noexcept;
     Mixed(bool) noexcept;
+    explicit Mixed(std::vector<bool>::reference b) noexcept
+        : Mixed(bool(b))
+    {
+    }
     Mixed(float) noexcept;
     Mixed(double) noexcept;
     Mixed(util::Optional<int64_t>) noexcept;
@@ -158,9 +162,7 @@ public:
     {
     }
 
-    ~Mixed() noexcept
-    {
-    }
+    ~Mixed() noexcept {}
 
     DataType get_type() const noexcept
     {
@@ -172,6 +174,12 @@ public:
     bool is_type(DataType head, Tail... tail) const noexcept
     {
         return _is_type(head, tail...);
+    }
+
+    template <class... Tail>
+    static bool is_numeric(DataType head, Tail... tail) noexcept
+    {
+        return _is_numeric(head, tail...);
     }
 
     static bool types_are_comparable(const Mixed& l, const Mixed& r);
@@ -228,6 +236,12 @@ public:
     {
         return compare(other) >= 0;
     }
+
+    Mixed operator+(const Mixed&) const;
+    Mixed operator-(const Mixed&) const;
+    Mixed operator*(const Mixed&) const;
+    Mixed operator/(const Mixed&) const;
+
     size_t hash() const;
     StringData get_index_data(std::array<char, 16>&) const;
     void use_buffer(std::string& buf);
@@ -263,6 +277,16 @@ private:
     bool _is_type(DataType head, Tail... tail) const noexcept
     {
         return _is_type(head) || _is_type(tail...);
+    }
+    static bool _is_numeric(DataType type) noexcept
+    {
+        return type == type_Int || type == type_Float || type == type_Double || type == type_Decimal ||
+               type == type_Mixed;
+    }
+    template <class... Tail>
+    static bool _is_numeric(DataType head, Tail... tail) noexcept
+    {
+        return _is_numeric(head) && _is_numeric(tail...);
     }
 };
 

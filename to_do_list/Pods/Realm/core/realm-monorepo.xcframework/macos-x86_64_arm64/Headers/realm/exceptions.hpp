@@ -125,24 +125,6 @@ public:
     }
 };
 
-/// Thrown when a column can not by found
-class ColumnNotFound : public std::runtime_error {
-public:
-    ColumnNotFound()
-        : std::runtime_error("Column not found")
-    {
-    }
-};
-
-/// Thrown when a column key is already used
-class ColumnAlreadyExists : public std::runtime_error {
-public:
-    ColumnAlreadyExists()
-        : std::runtime_error("Column already exists")
-    {
-    }
-};
-
 /// Thrown when a key is already existing when trying to create a new object
 class KeyAlreadyUsed : public std::runtime_error {
 public:
@@ -187,6 +169,11 @@ public:
 private:
     std::string m_object_type;
     std::string m_property;
+};
+
+class NoSubscriptionForWrite : public std::runtime_error {
+public:
+    NoSubscriptionForWrite(const std::string& msg);
 };
 
 
@@ -387,6 +374,11 @@ inline SerialisationError::SerialisationError(const std::string& msg)
 
 inline InvalidPathError::InvalidPathError(const std::string& msg)
     : runtime_error(msg)
+{
+}
+
+inline NoSubscriptionForWrite::NoSubscriptionForWrite(const std::string& msg)
+    : std::runtime_error(msg)
 {
 }
 

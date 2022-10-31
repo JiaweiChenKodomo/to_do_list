@@ -18,7 +18,7 @@
 
 #import <Realm/RLMConstants.h>
 
-/// A token originating from MongoDB Realm.
+/// A token originating from Atlas App Services.
 typedef NSString* RLMServerToken;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -43,10 +43,15 @@ extern NSString *const RLMSyncErrorDomain;
 extern NSString *const RLMSyncAuthErrorDomain;
 
 /**
-The error domain string for all SDK errors related to the MongoDB Realm
+The error domain string for all SDK errors related to the Atlas App Services
 endpoint.
 */
 extern NSString *const RLMAppErrorDomain;
+
+/**
+ The error domain string for all SDK errors related to flexible sync.
+ */
+extern NSString *const RLMFlexibleSyncErrorDomain;
 
 /**
  An error related to a problem that might be reported by the synchronization manager
@@ -69,7 +74,7 @@ typedef RLM_ERROR_ENUM(NSInteger, RLMSyncError, RLMSyncErrorDomain) {
     /**
      An error that indicates the Realm needs to be reset.
 
-     A synced Realm may need to be reset because MongoDB Realm encountered an
+     A synced Realm may need to be reset because Atlas App Services encountered an
      error and had to be restored from a backup. If the backup copy of the remote Realm
      is of an earlier version than the local copy of the Realm, the server will ask the
      client to reset the Realm.
@@ -77,7 +82,7 @@ typedef RLM_ERROR_ENUM(NSInteger, RLMSyncError, RLMSyncErrorDomain) {
      The reset process is as follows: the local copy of the Realm is copied into a recovery
      directory for safekeeping, and then deleted from the original location. The next time
      the Realm for that partition value is opened, the Realm will automatically be re-downloaded from
-     MongoDB Realm, and can be used as normal.
+     Atlas App Services, and can be used as normal.
 
      Data written to the Realm after the local copy of the Realm diverged from the backup
      remote copy will be present in the local recovery copy of the Realm file. The
@@ -141,7 +146,21 @@ typedef RLM_ERROR_ENUM(NSInteger, RLMSyncError, RLMSyncErrorDomain) {
     RLMSyncErrorPermissionDeniedError   = 9,
 };
 
-/// An error which is related to authentication to MongoDB Realm.
+/**
+ An error which is related to a flexible sync operation.
+ */
+typedef RLM_ERROR_ENUM(NSInteger, RLMFlexibleSyncError, RLMFlexibleSyncErrorDomain) {
+    /// An error describing why the subscription set synchronization failed.
+    RLMFlexibleSyncErrorStatusError     = 1,
+
+    /// An error while committing a subscription write.
+    RLMFlexibleSyncErrorCommitSubscriptionSetError     = 2,
+
+    /// An error while refreshing the subscription set state.
+    RLMFlexibleSyncErrorRefreshSubscriptionSetError     = 3,
+};
+
+/// An error which is related to authentication to Atlas App Services.
 typedef RLM_ERROR_ENUM(NSInteger, RLMSyncAuthError, RLMSyncAuthErrorDomain) {
     /// An error that indicates that the response received from the authentication server was malformed.
     RLMSyncAuthErrorBadResponse                     = 1,
@@ -182,7 +201,7 @@ typedef RLM_ERROR_ENUM(NSInteger, RLMSyncAuthError, RLMSyncAuthErrorDomain) {
     RLMSyncAuthErrorFileCannotBeShared              = 703,
 };
 
-/// An error which is related to authentication to MongoDB Realm.
+/// An error which is related to authentication to Atlas App Services.
 typedef RLM_ERROR_ENUM(NSInteger, RLMAppError, RLMAppErrorDomain) {
     /// An unknown error has occured
     RLMAppErrorUnknown                        = -1,

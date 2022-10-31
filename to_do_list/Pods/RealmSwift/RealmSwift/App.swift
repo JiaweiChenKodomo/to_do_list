@@ -43,6 +43,27 @@ Realm Cloud user registration & password functions
 */
 public typealias EmailPasswordAuth = RLMEmailPasswordAuth
 
+/**
+ An object representing the social profile of a User.
+ */
+public typealias UserProfile = RLMUserProfile
+
+extension UserProfile {
+    /**
+     The metadata of the user.
+     The auth provider of the user is responsible for populating this `Document`.
+    */
+    public var metadata: Document {
+        guard let rlmMetadata = self.__metadata as RLMBSON?,
+            let anyBSON = ObjectiveCSupport.convert(object: rlmMetadata),
+            case let .document(metadata) = anyBSON else {
+            return [:]
+        }
+
+        return metadata
+    }
+}
+
 /// A block type used to report an error
 public typealias EmailPasswordAuthOptionalErrorBlock = RLMEmailPasswordAuthOptionalErrorBlock
 extension EmailPasswordAuth {
@@ -75,7 +96,7 @@ public typealias PushClient = RLMPushClient
 public typealias UserAPIKey = RLMUserAPIKey
 
 /**
-`Credentials`is an enum representing supported authentication types for MongoDB Realm.
+`Credentials`is an enum representing supported authentication types for Atlas App Services.
 Example Usage:
 ```
 let credentials = Credentials.JWT(token: myToken)
@@ -94,7 +115,7 @@ let credentials = Credentials.JWT(token: myToken)
     case emailPassword(email: String, password: String)
     /// Credentials from a JSON Web Token
     case jwt(token: String)
-    /// Credentials for a MongoDB Realm function using a mongodb document as a json payload.
+    /// Credentials for an Atlas App Services function using a mongodb document as a json payload.
     /// If the json can not be successfully serialised and error will be produced and the object will be nil.
     case function(payload: Document)
     /// Credentials from a user api key.
@@ -114,8 +135,8 @@ public extension App {
     /**
      Login to a user for the Realm app.
      
-     @param credentials The credentials identifying the user.
-     @param completion A callback invoked after completion. Will return `Result.success(User)` or `Result.failure(Error)`.
+     - parameter credentials: The credentials identifying the user.
+     - parameter completion: A callback invoked after completion. Will return `Result.success(User)` or `Result.failure(Error)`.
      */
     func login(credentials: Credentials, _ completion: @escaping (Result<User, Error>) -> Void) {
         self.__login(withCredential: ObjectiveCSupport.convert(object: credentials)) { user, error in
@@ -542,8 +563,8 @@ public extension APIKeyAuth {
     }
 }
 
-#if swift(>=5.5) && canImport(_Concurrency)
-@available(macOS 12.0, tvOS 15.0, iOS 15.0, watchOS 8.0, *)
+#if swift(>=5.6) && canImport(_Concurrency)
+@available(macOS 10.15, tvOS 13.0, iOS 13.0, watchOS 6.0, *)
 extension EmailPasswordAuth {
     /// Resets the password of an email identity using the
     /// password reset function set up in the application.
@@ -566,7 +587,7 @@ extension EmailPasswordAuth {
     }
 }
 
-@available(macOS 12.0, tvOS 15.0, iOS 15.0, watchOS 8.0, *)
+@available(macOS 10.15, tvOS 13.0, iOS 13.0, watchOS 6.0, *)
 extension App {
     /// Login to a user for the Realm app.
     /// @param credentials The credentials identifying the user.

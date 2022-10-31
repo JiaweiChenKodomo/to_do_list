@@ -21,8 +21,7 @@
 
 #include <realm/object-store/shared_realm.hpp>
 
-#include <realm/object-store/util/checked_mutex.hpp>
-
+#include <realm/util/checked_mutex.hpp>
 #include <realm/version_id.hpp>
 
 #include <condition_variable>
@@ -73,6 +72,12 @@ public:
     // This is also created as part of opening a Realm, so only use this
     // method if the session needs to exist before the Realm does.
     void create_session(const Realm::Config& config) REQUIRES(!m_realm_mutex, !m_schema_cache_mutex);
+
+    std::shared_ptr<SyncSession> sync_session() REQUIRES(!m_realm_mutex)
+    {
+        util::CheckedLockGuard lock(m_realm_mutex);
+        return m_sync_session;
+    }
 #endif
 
     // Get the existing cached Realm if it exists for the specified scheduler or config.scheduler
@@ -86,8 +91,9 @@ public:
     // be managed by this coordinator.
     void bind_to_context(Realm& realm) REQUIRES(!m_realm_mutex);
 
-    Realm::Config get_config() const
+    Realm::Config get_config() const REQUIRES(!m_realm_mutex)
     {
+        util::CheckedLockGuard lock(m_realm_mutex);
         return m_config;
     }
 
@@ -183,7 +189,7 @@ public:
 
     // Commit a Realm's current write transaction and send notifications to all
     // other Realm instances for that path, including in other processes
-    void commit_write(Realm& realm) REQUIRES(!m_notifier_mutex);
+    void commit_write(Realm& realm, bool commit_to_disk = true) REQUIRES(!m_notifier_mutex);
 
     void enable_wait_for_change();
     bool wait_for_change(std::shared_ptr<Transaction> tr);
@@ -191,10 +197,12 @@ public:
 
     void close();
     bool compact();
-    void write_copy(StringData path, BinaryData key, bool allow_overwrite);
+    void write_copy(StringData path, const char* key);
 
     template <typename Pred>
     util::CheckedUniqueLock wait_for_notifiers(Pred&& wait_predicate) REQUIRES(!m_notifier_mutex);
+
+    void async_request_write_mutex(Realm& realm);
 
     AuditInterface* audit_context() const noexcept
     {
@@ -224,8 +232,6 @@ private:
     // Transaction used for actually running async notifiers
     // Will have a read transaction iff m_notifiers is non-empty
     std::shared_ptr<Transaction> m_notifier_sg;
-
-    std::exception_ptr m_async_error;
 
     std::unique_ptr<_impl::ExternalCommitHelper> m_notifier;
 

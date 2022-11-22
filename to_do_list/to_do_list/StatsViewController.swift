@@ -21,17 +21,26 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     // IValueFormatter formats value ticks on the plot.
     var textField = UITextField()
     
-    var textFieldUp = UITextField()
+    //var textFieldUp = UITextField()
     
     var textFieldMid = UITextField()
     
     var textFieldPeriod = UITextField()
+    
+    var startDatePicker = UIDatePicker()
+    var endDatePicker = UIDatePicker()
+    
+    private let fromLabel = UILabel()
+    private let toLabel = UILabel()
     
     var days = 14
     
     var wdays = 7
     
     var period = 7
+    
+    var yStart = 400
+    var yOffset = 60
     
     let emitterNode = SKEmitterNode(fileNamed: "snow1.sks")!
     
@@ -96,34 +105,71 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         //dbg_gen_test_data()
         //Try loading data first.
-        setData(days: days, wdays: wdays)
+        //setData(days: days, wdays: wdays)
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        let todayEnd: Date = {
+            let components = DateComponents(day: 1, second: -1)
+            return Calendar.current.date(byAdding: components, to: todayStart)!
+        }() // This is in fact today's end.
+
+        let twoWeeksAgoEnd: Date = {
+          let components = DateComponents(day: -days)
+          return Calendar.current.date(byAdding: components, to: todayEnd)!
+        }()
+        setData3(startDay: twoWeeksAgoEnd, endDay: todayEnd, wdays: wdays)
         
         // Do any additional setup after loading the view.
         //
         scrollView = UIScrollView(frame: view.bounds)
-        scrollView.contentSize = view.bounds.size
+        scrollView.contentSize = CGSizeMake(view.bounds.size.width, CGFloat(yStart + yOffset * 6))
         view.addSubview(scrollView)
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scrollView.addSubview(lineChart)
-        scrollView.contentOffset = CGPoint(x: 0, y: 150)
+        //scrollView.contentOffset = CGPoint(x: 0, y: 150)
         
         //view.addSubview(lineChart)
-        lineChart.centerInSuperview()
+        //lineChart.centerInSuperview()
+        lineChart.frame = CGRect(x: 0, y: 0, width: view.bounds.size.width, height: view.bounds.size.width)
         //lineChart.width(to: scrollView)
         lineChart.width(to: scrollView, multiplier: 0.95)
         lineChart.heightToWidth(of: view)
         
-        let claerBut = UIButton(type: .system)
-        claerBut.frame = CGRect(x: 255, y: 780, width: 100, height: 50)
-        claerBut.setTitle("Delete", for: .normal)
-        claerBut.layer.borderWidth = 1.0
-        claerBut.layer.borderColor = UIColor.blue.cgColor
-        claerBut.addTarget(self, action: #selector(didTapClear), for: .touchUpInside)
-        //self.view.addSubview(claerBut)
-        scrollView.addSubview(claerBut)
+//        textFieldUp.delegate = self
+//        textFieldUp.frame = CGRect(x: 15, y: yStart, width: 200, height: 50)
+//        textFieldUp.borderStyle = UITextField.BorderStyle.roundedRect
+//        textFieldUp.text = "Put # of records to plot"
+//        //self.view.addSubview(textFieldUp)
+//        scrollView.addSubview(textFieldUp)
+        
+        fromLabel.text = "From:"
+        fromLabel.frame = CGRect(x: 30, y: yStart - 30, width: 320, height: 50)
+        scrollView.addSubview(fromLabel)
+        
+        startDatePicker.setDate(Date().addingTimeInterval(-1209600), animated: true)
+        startDatePicker.frame = CGRect(x: 15, y: yStart, width: 320, height: 50)
+        startDatePicker.contentHorizontalAlignment = .left
+        startDatePicker.datePickerMode = UIDatePicker.Mode.date
+        scrollView.addSubview(startDatePicker)
+        
+        toLabel.text = "To:"
+        toLabel.frame = CGRect(x: 30, y: yStart - 30 + yOffset, width: 320, height: 50)
+        scrollView.addSubview(toLabel)
+        
+        endDatePicker.setDate(Date(), animated: true)
+        endDatePicker.frame = CGRect(x: 15, y: yStart + yOffset, width: 320, height: 50)
+        endDatePicker.contentHorizontalAlignment = .left
+        endDatePicker.datePickerMode = UIDatePicker.Mode.date
+        scrollView.addSubview(endDatePicker)
+        
+        textFieldMid.delegate = self
+        textFieldMid.frame = CGRect(x: 15, y: yStart + 2 * yOffset, width: 200, height: 50)
+        textFieldMid.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldMid.text = "Put window size"
+        //self.view.addSubview(textFieldUp)
+        scrollView.addSubview(textFieldMid)
         
         let plotBut = UIButton(type: .system)
-        plotBut.frame = CGRect(x: 255, y: 660, width: 100, height: 50)
+        plotBut.frame = CGRect(x: 255, y: yStart + 3 * yOffset, width: 100, height: 50)
         plotBut.setTitle("Plot", for: .normal)
         plotBut.layer.borderWidth = 1.0
         plotBut.layer.borderColor = UIColor.blue.cgColor
@@ -131,33 +177,30 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         //self.view.addSubview(plotBut)
         scrollView.addSubview(plotBut)
         
-        textField.delegate = self
-        textField.frame = CGRect(x: 15, y: 780, width: 200, height: 50)
-        textField.borderStyle = UITextField.BorderStyle.roundedRect
-        textField.text = "Put # of records to keep"
-        //self.view.addSubview(textField)
-        scrollView.addSubview(textField)
-        
-        textFieldUp.delegate = self
-        textFieldUp.frame = CGRect(x: 15, y: 600, width: 200, height: 50)
-        textFieldUp.borderStyle = UITextField.BorderStyle.roundedRect
-        textFieldUp.text = "Put # of records to plot"
-        //self.view.addSubview(textFieldUp)
-        scrollView.addSubview(textFieldUp)
-        
         textFieldPeriod.delegate = self
-        textFieldPeriod.frame = CGRect(x: 15, y: 720, width: 200, height: 50)
+        textFieldPeriod.frame = CGRect(x: 15, y: yStart + yOffset * 3, width: 200, height: 50)
         textFieldPeriod.borderStyle = UITextField.BorderStyle.roundedRect
         textFieldPeriod.text = "Put period of x-label"
         //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldPeriod)
         
-        textFieldMid.delegate = self
-        textFieldMid.frame = CGRect(x: 15, y: 660, width: 200, height: 50)
-        textFieldMid.borderStyle = UITextField.BorderStyle.roundedRect
-        textFieldMid.text = "Put window size"
-        //self.view.addSubview(textFieldUp)
-        scrollView.addSubview(textFieldMid)
+        
+        
+        textField.delegate = self
+        textField.frame = CGRect(x: 15, y: yStart + yOffset * 5, width: 200, height: 50)
+        textField.borderStyle = UITextField.BorderStyle.roundedRect
+        textField.text = "Put # of records to keep"
+        //self.view.addSubview(textField)
+        scrollView.addSubview(textField)
+        
+        let claerBut = UIButton(type: .system)
+        claerBut.frame = CGRect(x: 255, y: yStart + yOffset * 5, width: 100, height: 50)
+        claerBut.setTitle("Delete", for: .normal)
+        claerBut.layer.borderWidth = 1.0
+        claerBut.layer.borderColor = UIColor.blue.cgColor
+        claerBut.addTarget(self, action: #selector(didTapClear), for: .touchUpInside)
+        //self.view.addSubview(claerBut)
+        scrollView.addSubview(claerBut)
         
         // Add animation based on performance
         if (addAnimation && !animationLoaded) {
@@ -214,35 +257,358 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         print(entry)
     }
     
-    func setData(days: Int, wdays: Int) {
-        
-        if days <= 0 || wdays <= 0 {
-            return
-        }
-        
+//    func setData(days: Int, wdays: Int) {
+//
+//        if days <= 0 || wdays <= 0 {
+//            return
+//        }
+//
+//        // day interval
+//        let todayStart = Calendar.current.startOfDay(for: Date())
+//        let todayEnd: Date = {
+//            let components = DateComponents(day: 1, second: -1)
+//            return Calendar.current.date(byAdding: components, to: todayStart)!
+//        }() // This is in fact today's end.
+//
+//        let twoWeeksAgoEnd: Date = {
+//          let components = DateComponents(day: -days)
+//          return Calendar.current.date(byAdding: components, to: todayEnd)!
+//        }()
+//
+//        let fourWeeksAgoEnd: Date = {
+//          let components = DateComponents(day: (-days - wdays + 1))
+//          return Calendar.current.date(byAdding: components, to: todayEnd)!
+//        }()
+//
+//        //print("***")
+////        print(format.string(from: twoWeeksAgoEnd))
+//        //print(format.string(from: fourWeeksAgoEnd))
+//        //print(format.string(from: todayEnd))
+//
+//        let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", fourWeeksAgoEnd, todayEnd)
+//
+//        if dayEval14.isEmpty {
+//            let yVal = [ChartDataEntry(x: 0, y: 0.0)]
+//
+//            let set1 = LineChartDataSet(entries: yVal, label: "Finished")
+//            set1.setColor(.blue)
+//            set1.setCircleColor(.blue)
+//            let set2 = LineChartDataSet(entries: yVal, label: "Time Spent")
+//            set2.setColor(.red)
+//            set2.setCircleColor(.red)
+//
+//            let set3 = LineChartDataSet(entries: yVal, label: "Average Time Spent")
+//            set3.setColor(.red)
+//            set3.lineDashLengths = [5]
+//            set3.drawCirclesEnabled = false
+//            let set4 = LineChartDataSet(entries: yVal, label: "Average Finished")
+//            set4.setColor(.blue)
+//            set4.lineDashLengths = [5]
+//            set4.drawCirclesEnabled = false
+//
+//            let data = LineChartData(dataSets: [set1, set2, set3, set4])
+//
+//            lineChart.data = data
+//            return
+//        }
+//
+//        var rawVal = [Double]()
+//        rawVal.reserveCapacity(days+wdays-1)
+//        var rawVal2 = [Double]()
+//        rawVal2.reserveCapacity(days+wdays-1)
+//
+//        var yVal = [ChartDataEntry]()
+//        yVal.reserveCapacity(days)
+//        var yVal2 = [ChartDataEntry]()
+//        yVal2.reserveCapacity(days)
+//        var aveVal = [ChartDataEntry]()
+//        aveVal.reserveCapacity(days)
+//        var aveVal2 = [ChartDataEntry]()
+//        aveVal2.reserveCapacity(days)
+//
+//        var weights = [Double]()
+//        var sumWeight = 0.0
+//        weights.reserveCapacity(wdays)
+//
+//        if (wdays == 1) {
+//            weights.append(1.0)
+//        } else {
+//            for aa in stride(from: 0, to: wdays, by: 1) {
+//                let a = 4.0 / (Double(wdays) - 1.0)
+//                let z = a * Double(aa) - 2.0
+//                weights.append(1.0 / (1.0 + exp(-z)))
+//                sumWeight += 1.0 / (1.0 + exp(-z))
+//            }
+//
+//            for aa in stride(from: 0, to: wdays, by: 1) {
+//                weights[aa] /= sumWeight
+//            }
+//        }
+//
+//        var aa = 0.0
+//        var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
+//        //print("##########")
+//        for dayEval in dayEval14 {
+//            //print(format.string(from: dayEval.date))
+//            //print(dayEval.tot_time)
+//            // add n zero days if current dayEval is more than 24 hours after the previous dayVal. Do this first.
+//            let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: prevTime, to: Calendar.current.startOfDay(for: dayEval.date))
+//            if diffTime.day ?? 0 > 1 {
+//                // add n zero days where n is the no. of difference in days.
+//                var bb = 1 // Start with 1, because, e.g., records are on 11 and 14, then only need to pad 2.
+//                while bb < diffTime.day! {
+//                    //print(diffTime.day!)
+//                    rawVal.append(0.0)
+//                    rawVal2.append(0.0)
+//                    aa += 1.0
+//                    bb += 1
+//                }
+//            }
+//
+//            rawVal.append(dayEval.tot_time)
+//            rawVal2.append(dayEval.tot_finish)
+//            aa += 1.0
+//
+//            prevTime = Calendar.current.startOfDay(for: dayEval.date)
+//
+//        } //raw data are zero-paded.
+//        // The above step is not working for zeros at the end. So add zeros at the end.
+//        while rawVal.count < days+wdays-1 {
+//            rawVal.append(0.0)
+//            rawVal2.append(0.0)
+//        }
+//
+//        for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
+//            yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
+//            //print(rawVal[aa])
+//            yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
+//            aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights.last!))
+//            aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights.last!))
+//        } //Have to append to initialize the data.
+//
+//        //print(weights)
+//        for aa in stride(from: 0, to: wdays - 1, by: 1) {
+//            for bb in 0..<min(aa+1, days) {
+//                aveVal[bb].y += rawVal[aa] * weights[aa - bb]
+//                aveVal2[bb].y += rawVal2[aa] * weights[aa - bb]
+//            }
+//        }
+//        for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
+//            for bb in (aa-wdays+1+1)..<min(aa+1, days) {
+//                aveVal[bb].y += rawVal[aa] * weights[aa - bb]
+//                aveVal2[bb].y += rawVal2[aa] * weights[aa - bb]
+//            }
+//
+//        }
+//
+//
+//        let set1 = LineChartDataSet(entries: yVal2, label: "Finished")
+//        set1.setColor(.blue)
+//        set1.setCircleColor(.blue)
+//        let set2 = LineChartDataSet(entries: yVal, label: "Time Spent")
+//        set2.setColor(.red)
+//        set2.setCircleColor(.red)
+//
+//        let set3 = LineChartDataSet(entries: aveVal, label: "Average Time Spent")
+//        set3.setColor(.red)
+//        set3.lineDashLengths = [5]
+//        set3.drawCirclesEnabled = false
+//        let set4 = LineChartDataSet(entries: aveVal2, label: "Average Finished")
+//        set4.setColor(.blue)
+//        set4.lineDashLengths = [5]
+//        set4.drawCirclesEnabled = false
+//
+//        if ((yVal.last!.y > aveVal.last!.y || (yVal2.last!.y > aveVal2.last!.y)) && !animationLoaded) {
+//            addAnimation = true
+//        }
+//
+//        let data = LineChartData(dataSets: [set1, set2, set3, set4])
+//
+//        lineChart.xAxis.valueFormatter = self
+//        lineChart.data = data
+//    }
+    
+//    func setData2(startDay: Date, endDay: Date, wdays: Int) {
+//
+//        // day interval
+//        let todayStart = Calendar.current.startOfDay(for: endDay)
+//        let todayEnd: Date = {
+//            let components = DateComponents(day: 1, second: -1)
+//            return Calendar.current.date(byAdding: components, to: todayStart)!
+//        }() // This is in fact today's end.
+//
+//
+//        let fourWeeksAgoEnd: Date = {
+//          let components = DateComponents(day: (1 - wdays))
+//          return Calendar.current.date(byAdding: components, to: Calendar.current.startOfDay(for: startDay))!
+//        }()
+//
+//        let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", fourWeeksAgoEnd, todayEnd)
+//
+//        if dayEval14.isEmpty {
+//            let yVal = [ChartDataEntry(x: 0, y: 0.0)]
+//
+//            let set1 = LineChartDataSet(entries: yVal, label: "Finished")
+//            set1.setColor(.blue)
+//            set1.setCircleColor(.blue)
+//            let set2 = LineChartDataSet(entries: yVal, label: "Time Spent")
+//            set2.setColor(.red)
+//            set2.setCircleColor(.red)
+//
+//            let set3 = LineChartDataSet(entries: yVal, label: "Average Time Spent")
+//            set3.setColor(.red)
+//            set3.lineDashLengths = [5]
+//            set3.drawCirclesEnabled = false
+//            let set4 = LineChartDataSet(entries: yVal, label: "Average Finished")
+//            set4.setColor(.blue)
+//            set4.lineDashLengths = [5]
+//            set4.drawCirclesEnabled = false
+//
+//            let data = LineChartData(dataSets: [set1, set2, set3, set4])
+//
+//            lineChart.data = data
+//            return
+//        }
+//
+//        let days = Int(endDay.timeIntervalSince(startDay) / (3600*24))
+//
+////        print("***")
+////        print(format.string(from: fourWeeksAgoEnd))
+////        print(format.string(from: todayEnd))
+////        print(days)
+//
+//        var rawVal = [Double]()
+//        rawVal.reserveCapacity(days+wdays-1)
+//        var rawVal2 = [Double]()
+//        rawVal2.reserveCapacity(days+wdays-1)
+//
+//        var yVal = [ChartDataEntry]()
+//        yVal.reserveCapacity(days)
+//        var yVal2 = [ChartDataEntry]()
+//        yVal2.reserveCapacity(days)
+//        var aveVal = [ChartDataEntry]()
+//        aveVal.reserveCapacity(days)
+//        var aveVal2 = [ChartDataEntry]()
+//        aveVal2.reserveCapacity(days)
+//
+//        var weights = [Double]()
+//        var sumWeight = 0.0
+//        weights.reserveCapacity(wdays)
+//
+//        if (wdays == 1) {
+//            weights.append(1.0)
+//        } else {
+//            for aa in stride(from: 0, to: wdays, by: 1) {
+//                let a = 4.0 / (Double(wdays) - 1.0)
+//                let z = a * Double(aa) - 2.0
+//                weights.append(1.0 / (1.0 + exp(-z)))
+//                sumWeight += 1.0 / (1.0 + exp(-z))
+//            }
+//
+//            for aa in stride(from: 0, to: wdays, by: 1) {
+//                weights[aa] /= sumWeight
+//            }
+//        }
+//
+//        var aa = 0.0
+//        var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
+//        //print("##########")
+//        for dayEval in dayEval14 {
+//            //print(format.string(from: dayEval.date))
+//            //print(dayEval.tot_time)
+//            // add n zero days if current dayEval is more than 24 hours after the previous dayVal. Do this first.
+//            let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: prevTime, to: Calendar.current.startOfDay(for: dayEval.date))
+//            if diffTime.day ?? 0 > 1 {
+//                // add n zero days where n is the no. of difference in days.
+//                var bb = 1 // Start with 1, because, e.g., records are on 11 and 14, then only need to pad 2.
+//                while bb < diffTime.day! {
+//                    //print(diffTime.day!)
+//                    rawVal.append(0.0)
+//                    rawVal2.append(0.0)
+//                    aa += 1.0
+//                    bb += 1
+//                }
+//            }
+//
+//            rawVal.append(dayEval.tot_time)
+//            rawVal2.append(dayEval.tot_finish)
+//            aa += 1.0
+//
+//            prevTime = Calendar.current.startOfDay(for: dayEval.date)
+//
+//        } //raw data are zero-paded.
+//        // The above step is not working for zeros at the end. So add zeros at the end.
+//        while rawVal.count < days+wdays-1 {
+//            rawVal.append(0.0)
+//            rawVal2.append(0.0)
+//        }
+//
+//        for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
+//            yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
+//            //print(rawVal[aa])
+//            yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
+//            aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights.last!))
+//            aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights.last!))
+//        } //Have to append to initialize the data.
+//
+//        //print(weights)
+//        for aa in stride(from: 0, to: wdays - 1, by: 1) {
+//            for bb in 0..<min(aa+1, days) {
+//                aveVal[bb].y += rawVal[aa] * weights[aa - bb]
+//                aveVal2[bb].y += rawVal2[aa] * weights[aa - bb]
+//            }
+//        }
+//        for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
+//            for bb in (aa-wdays+1+1)..<min(aa+1, days) {
+//                aveVal[bb].y += rawVal[aa] * weights[aa - bb]
+//                aveVal2[bb].y += rawVal2[aa] * weights[aa - bb]
+//            }
+//
+//        }
+//
+//
+//        let set1 = LineChartDataSet(entries: yVal2, label: "Finished")
+//        set1.setColor(.blue)
+//        set1.setCircleColor(.blue)
+//        let set2 = LineChartDataSet(entries: yVal, label: "Time Spent")
+//        set2.setColor(.red)
+//        set2.setCircleColor(.red)
+//
+//        let set3 = LineChartDataSet(entries: aveVal, label: "Average Time Spent")
+//        set3.setColor(.red)
+//        set3.lineDashLengths = [5]
+//        set3.drawCirclesEnabled = false
+//        let set4 = LineChartDataSet(entries: aveVal2, label: "Average Finished")
+//        set4.setColor(.blue)
+//        set4.lineDashLengths = [5]
+//        set4.drawCirclesEnabled = false
+//
+//        if ((yVal.last!.y > aveVal.last!.y || (yVal2.last!.y > aveVal2.last!.y)) && !animationLoaded) {
+//            addAnimation = true
+//        }
+//
+//        let data = LineChartData(dataSets: [set1, set2, set3, set4])
+//
+//        lineChart.xAxis.valueFormatter = self
+//        lineChart.data = data
+//    }
+    
+    func setData3(startDay: Date, endDay: Date, wdays: Int) {
+        // startDay is excluded. endDay is included.
         // day interval
-        let todayStart = Calendar.current.startOfDay(for: Date())
-        let yesterday: Date = {
+        let todayStart = Calendar.current.startOfDay(for: endDay)
+        let todayEnd: Date = {
             let components = DateComponents(day: 1, second: -1)
             return Calendar.current.date(byAdding: components, to: todayStart)!
         }() // This is in fact today's end.
         
-//        let twoWeeksAgoEnd: Date = {
-//          let components = DateComponents(day: -days)
-//          return Calendar.current.date(byAdding: components, to: yesterday)!
-//        }()
         
         let fourWeeksAgoEnd: Date = {
-          let components = DateComponents(day: (-days - wdays + 1))
-          return Calendar.current.date(byAdding: components, to: yesterday)!
+          let components = DateComponents(day: (2 - wdays))
+          return Calendar.current.date(byAdding: components, to: Calendar.current.startOfDay(for: startDay))!
         }()
         
-        //print("***")
-//        print(format.string(from: twoWeeksAgoEnd))
-        //print(format.string(from: fourWeeksAgoEnd))
-        //print(format.string(from: yesterday))
-        
-        let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", fourWeeksAgoEnd, yesterday)
+        let dayEval14 = realm.objects(dailyPerfEval.self).filter("date BETWEEN {%@, %@}", fourWeeksAgoEnd, todayEnd)
         
         if dayEval14.isEmpty {
             let yVal = [ChartDataEntry(x: 0, y: 0.0)]
@@ -269,10 +635,21 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             return
         }
         
+        let days = Int(todayEnd.timeIntervalSince(startDay) / (3600*24))
+        
+//        print("***")
+//        print(format.string(from: fourWeeksAgoEnd))
+//        print(format.string(from: todayEnd))
+//        print(days)
+        
         var rawVal = [Double]()
         rawVal.reserveCapacity(days+wdays-1)
         var rawVal2 = [Double]()
         rawVal2.reserveCapacity(days+wdays-1)
+        for _ in stride(from: 0, to: days+wdays-1, by: 1) {
+            rawVal.append(0.0)
+            rawVal2.append(0.0)
+        }
         
         var yVal = [ChartDataEntry]()
         yVal.reserveCapacity(days)
@@ -302,38 +679,56 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             }
         }
         
-        var aa = 0.0
-        var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
-        //print("##########")
+        // rawVal and rawVal2 are already zero. Now hash all data in dayEval to the corresponding slots.
         for dayEval in dayEval14 {
-            //print(format.string(from: dayEval.date))
-            //print(dayEval.tot_time)
-            // add n zero days if current dayEval is more than 24 hours after the previous dayVal. Do this first.
-            let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: prevTime, to: Calendar.current.startOfDay(for: dayEval.date))
-            if diffTime.day ?? 0 > 1 {
-                // add n zero days where n is the no. of difference in days.
-                var bb = 1 // Start with 1, because, e.g., records are on 11 and 14, then only need to pad 2.
-                while bb < diffTime.day! {
-                    //print(diffTime.day!)
-                    rawVal.append(0.0)
-                    rawVal2.append(0.0)
-                    aa += 1.0
-                    bb += 1
-                }
-            }
             
-            rawVal.append(dayEval.tot_time)
-            rawVal2.append(dayEval.tot_finish)
-            aa += 1.0
+            let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: fourWeeksAgoEnd, to: Calendar.current.startOfDay(for: dayEval.date))
+            let index = diffTime.day ?? 0
             
-            prevTime = Calendar.current.startOfDay(for: dayEval.date)
+//            print("***")
+//            print(days)
+//            print(wdays)
+//            print(format.string(from: fourWeeksAgoEnd))
+//            print(format.string(from: dayEval.date))
+//            print(diffTime.day)
             
-        } //raw data are zero-paded.
-        // The above step is not working for zeros at the end. So add zeros at the end.
-        while rawVal.count < days+wdays-1 {
-            rawVal.append(0.0)
-            rawVal2.append(0.0)
+            rawVal[index] += dayEval.tot_time
+            rawVal2[index] += dayEval.tot_finish
+            
         }
+        
+//        var aa = 0.0
+//        var prevTime = Calendar.current.startOfDay(for:fourWeeksAgoEnd)
+//        //print("##########")
+//        for dayEval in dayEval14 {
+//            //print(format.string(from: dayEval.date))
+//            //print(dayEval.tot_time)
+//            // add n zero days if current dayEval is more than 24 hours after the previous dayVal. Do this first.
+//            let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: prevTime, to: Calendar.current.startOfDay(for: dayEval.date))
+//            if diffTime.day ?? 0 > 1 {
+//                // add n zero days where n is the no. of difference in days.
+//                var bb = 1 // Start with 1, because, e.g., records are on 11 and 14, then only need to pad 2.
+//                while bb < diffTime.day! {
+//                    //print(diffTime.day!)
+//                    rawVal.append(0.0)
+//                    rawVal2.append(0.0)
+//                    aa += 1.0
+//                    bb += 1
+//                }
+//            }
+//
+//            rawVal.append(dayEval.tot_time)
+//            rawVal2.append(dayEval.tot_finish)
+//            aa += 1.0
+//
+//            prevTime = Calendar.current.startOfDay(for: dayEval.date)
+//
+//        } //raw data are zero-paded.
+//        // The above step is not working for zeros at the end. So add zeros at the end.
+//        while rawVal.count < days+wdays-1 {
+//            rawVal.append(0.0)
+//            rawVal2.append(0.0)
+//        }
         
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
@@ -384,6 +779,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         lineChart.xAxis.valueFormatter = self
         lineChart.data = data
     }
+    
     
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         let offsetX = max((scrollView.bounds.width - scrollView.contentSize.width) * 0.5, 0)
@@ -458,14 +854,24 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     @objc private func didTapPlot() {
         // will delete records prior to predetermined date.
         
-        let daysToPlot = Int(textFieldUp.text!) ?? 14
+        //let daysToPlot = Int(textFieldUp.text!) ?? 14
+        
+        var startDay = startDatePicker.date
+        let endDay = endDatePicker.date
+        
+        if (endDay.timeIntervalSince(startDay) < 1) {
+            startDay = endDay.addingTimeInterval(-86400)
+        } // At least one day prior to endDay.
+        
         let window = Int(textFieldMid.text!) ?? 7
         period = Int(textFieldPeriod.text!) ?? 7
         if period <= 0 {
             period = 100
         }
         
-        setData(days: daysToPlot, wdays: window)
+        //setData(days: daysToPlot, wdays: window)
+        //setData2(startDay: startDay, endDay: endDay, wdays: window)
+        setData3(startDay: startDay, endDay: endDay, wdays: window)
         
     }
     

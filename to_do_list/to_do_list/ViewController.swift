@@ -54,6 +54,8 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     
     private var perfData = [dailyPerfEval]()
     
+    private var deleteIndex:Set<Int> = []
+    
     var timer: Timer!
     
     override func viewDidLoad() {
@@ -85,6 +87,20 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         statsBut.layer.borderColor = UIColor.blue.cgColor
         statsBut.addTarget(self, action: #selector(didTapStat), for: .touchUpInside)
         self.view.addSubview(statsBut)
+        // left bar buttom
+        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(didTapDelete))
+        
+        // add long press. From https://juejin.cn/post/6844903543237771272.
+        table.isEditing = false
+        
+        table.allowsMultipleSelectionDuringEditing = true
+        
+        let longPress = UILongPressGestureRecognizer(target:self,
+                                                     action:#selector(longPressed))
+        longPress.delegate = self
+        longPress.minimumPressDuration = 1.0
+        table.addGestureRecognizer(longPress)
+        
     }
     
     // table function
@@ -101,7 +117,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         var textCol = UIColor.label
         
-        cell.textLabel?.text = data[indexPath.row].item + ", " + String(format: "%.1f", data[indexPath.row].budget) + ", DL: " + dateFormatter.string(from: data[indexPath.row].date)
+        cell.textLabel?.text = dateFormatter.string(from: data[indexPath.row].date) + ", " + String(format: "%.1f", data[indexPath.row].budget) + ", " + data[indexPath.row].item
         
         if (data[indexPath.row].finished) {
             //doneString = "Done!"
@@ -134,22 +150,27 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
+        if !table.isEditing {
+            tableView.deselectRow(at: indexPath, animated: true)
+            
+            // open the screen to see the item in full or delete.
+            let item = data[indexPath.row]
+
+            guard let vc = storyboard?.instantiateViewController(identifier: "view") as? ViewViewController else {
+                return
+            }
+
+            vc.item = item
+            vc.deletionHandler = { [weak self] in
+                self?.refresh()
+            }
+            vc.navigationItem.largeTitleDisplayMode = .never
+            vc.title = item.item
+            navigationController?.pushViewController(vc, animated: true)
+        } else {
+            deleteIndex.insert(indexPath.row)
+        }
         
-        // open the screen to see the item in full or delete.
-        let item = data[indexPath.row]
-
-        guard let vc = storyboard?.instantiateViewController(identifier: "view") as? ViewViewController else {
-            return
-        }
-
-        vc.item = item
-        vc.deletionHandler = { [weak self] in
-            self?.refresh()
-        }
-        vc.navigationItem.largeTitleDisplayMode = .never
-        vc.title = item.item
-        navigationController?.pushViewController(vc, animated: true)
     }
     
     @IBAction func didTapAddButton() {
@@ -173,11 +194,65 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         navigationController?.pushViewController(vc, animated: true)
     }
     
+    @objc func didTapDelete() {
+        
+        if deleteIndex.isEmpty {
+            let alert = UIAlertController(title: "Long press to select items to delete", message: "", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: nil))
+            self.present(alert, animated: true)
+            
+            return
+            
+        }
+        
+        let alert = UIAlertController(title: "Delete those tasks?", message: "", preferredStyle: .alert)
+        
+        alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: {(action: UIAlertAction!) in
+            self.realm.beginWrite()
+//            self.realm.delete(myItem)
+            for index in self.deleteIndex {
+                let myItem = self.data[index]
+                self.realm.delete(myItem)
+            }
+            try! self.realm.commitWrite()
+            self.table.isEditing = false
+            self.deleteIndex = [] // Important!
+//            print(self.deleteIndex)
+            self.refresh()
+            
+        }))
+        alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: {(action: UIAlertAction!) in
+            
+            self.table.isEditing = false
+        }))
+        
+        self.present(alert, animated: true)
+
+    }
+    
     @objc func refresh() {
         data = realm.objects(checkListItem.self).map({ $0 })
         data = data.sorted(by: {$0.date<$1.date}) //Now list ordered by deadline ASC
         table.reloadData()
     }
 
+}
+
+extension ViewController: UIGestureRecognizerDelegate {
+    
+    // long press to select. From https://juejin.cn/post/6844903543237771272
+    @objc func longPressed(gestureRecognizer:UILongPressGestureRecognizer)
+    {
+        if (gestureRecognizer.state == .ended)
+        {
+            
+            if(self.table!.isEditing == false) {
+                self.table!.setEditing(true, animated:true)
+            }
+            else {
+                self.table!.setEditing(false, animated:true)
+            }
+        }
+    }
 }
 

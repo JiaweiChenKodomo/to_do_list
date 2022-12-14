@@ -121,25 +121,27 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         if (data[indexPath.row].finished) {
             //doneString = "Done!"
-            colorSign = UIColor.init(red: 0.384, green: 0.792, blue: 0.314, alpha: 1.0)
+            colorSign = UIColor.init(red: 0.384, green: 0.792, blue: 0.314, alpha: 0.8)
             textCol = UIColor.darkText
         } else if (data[indexPath.row].checkIn) {
-            colorSign = UIColor.init(red: 1.0, green: 0.847, blue: 0.153, alpha: 1.0)
+            colorSign = UIColor.init(red: 1.0, green: 0.847, blue: 0.153, alpha: 0.8)
             textCol = UIColor.darkText
             
         } else if (data[indexPath.row].date.timeIntervalSinceNow <= 0.0) {
             //doneString = "Urgent!"
-            colorSign = UIColor.init(red: 0.831, green: 0.165, blue: 0.204, alpha: 1.0)
-        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * 6.0) {
+            colorSign = UIColor.init(red: 0.831, green: 0.165, blue: 0.204, alpha: 0.8)
+        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * max(6.0, data[indexPath.row].budget)) {
             //doneString = "Attention!"
-            colorSign = UIColor.init(red: 0.969, green: 0.549, blue: 0.216, alpha: 1.0)
-        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * 24.0) {
+            colorSign = UIColor.init(red: 0.969, green: 0.549, blue: 0.216, alpha: 0.8)
+        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * max(24.0, data[indexPath.row].budget * 3.0)) {
+            // * 3.0 because of assumption that one works 8 hours a day, so an 8-hour task spans one day. As a result, a task with a 16-hour budget due in 2 days is still treated as one needing attention today.
             //doneString = "Today!"
-            colorSign = UIColor.init(red: 0.416, green: 0.196, blue: 0.647, alpha: 1.0)
+            colorSign = UIColor.init(red: 0.416, green: 0.196, blue: 0.647, alpha: 0.8)
             textCol = UIColor.lightText
-        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * 48.0) {
+        } else if (data[indexPath.row].date.timeIntervalSinceNow <= 3600 * max(48.0, data[indexPath.row].budget * 3.0 * 2.0)) {
             //doneString = "Tomorrow!"
-            colorSign = UIColor.init(red: 0.643, green: 0.196, blue: 0.647, alpha: 1.0)
+            // A taskwith with a 16-hour budget due in 4 days is treated as one needing attention "tomorrow", though it won't become more urgent tomorrow.
+            colorSign = UIColor.init(red: 0.643, green: 0.196, blue: 0.647, alpha: 0.8)
             textCol = UIColor.lightText
         }
         
@@ -205,7 +207,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
             
         }
         
-        let alert = UIAlertController(title: "Delete those tasks?", message: "", preferredStyle: .alert)
+        let alert = UIAlertController(title: "Delete those " + String(deleteIndex.count) + " tasks?", message: "", preferredStyle: .alert)
         
         alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: {(action: UIAlertAction!) in
             self.realm.beginWrite()

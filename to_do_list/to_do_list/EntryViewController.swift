@@ -12,6 +12,7 @@ import UIKit
 class EntryViewController: UIViewController, UITextFieldDelegate {
 
     var textField = UITextField()
+    var textFieldKR = UITextField()
     var textFieldBudget = UITextField()
     var datePicker = UIDatePicker()
 
@@ -19,6 +20,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     public var completionHandler: (() -> Void)?
     
     var textFieldItem = UITextField()
+    var textFieldKRTitle = UITextField()
     var textFieldBGTTitle = UITextField()
     var textFieldDLTitle = UITextField()
     
@@ -40,7 +42,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
         startY += yOffset
         
         textFieldItem.frame = CGRect(x: xOffset, y: startY, width: 110, height: textHeight)
-        textFieldItem.text = "Item"
+        textFieldItem.text = "Objective"
         self.view.addSubview(textFieldItem)
         
         startY += textHeight+sSpacing
@@ -49,6 +51,17 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
         textField.frame = CGRect(x: xOffset, y: startY, width: 274, height: fieldHeight)
         textField.borderStyle = UITextField.BorderStyle.roundedRect
         self.view.addSubview(textField)
+        
+        startY += fieldHeight+bSpacing
+        textFieldKRTitle.frame = CGRect(x: xOffset, y: startY, width: 274, height: textHeight)
+        textFieldKRTitle.text = "Key Results"
+        self.view.addSubview(textFieldKRTitle)
+        
+        startY += textHeight+sSpacing
+        textFieldKR.delegate = self
+        textFieldKR.borderStyle = UITextField.BorderStyle.roundedRect
+        textFieldKR.frame = CGRect(x: xOffset, y: startY, width: 274, height: fieldHeight)
+        self.view.addSubview(textFieldKR)
         
         startY += fieldHeight+bSpacing
         textFieldBGTTitle.frame = CGRect(x: xOffset, y: startY, width: 56, height: textHeight)
@@ -154,6 +167,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     
     @objc func didTapSaveButton() {
         if let text = textField.text, !text.isEmpty {
+            let KR = textFieldKR.text ?? "(No KR)"
             let date = datePicker.date
             let budget = Double(textFieldBudget.text!) ?? 0.0
             
@@ -161,7 +175,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
             realm.beginWrite()
             let newItem = checkListItem()
             newItem.date = date
-            newItem.item = text
+            newItem.item = text + " \u{21e8} " + KR
             newItem.budget = budget
             realm.add(newItem)
             try! realm.commitWrite()

@@ -167,7 +167,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     
     @objc func didTapSaveButton() {
         if let text = textField.text, !text.isEmpty {
-            let KR = textFieldKR.text ?? "(No KR)"
+            let KR = (textFieldKR.text?.isEmpty ?? true) ? "(No KR)" : textFieldKR.text
             let date = datePicker.date
             let budget = Double(textFieldBudget.text!) ?? 0.0
             
@@ -175,7 +175,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
             realm.beginWrite()
             let newItem = checkListItem()
             newItem.date = date
-            newItem.item = text + " \u{21e8} " + KR
+            newItem.item = text + " \u{21e8} " + (KR ?? "(No KR)")
             newItem.budget = budget
             realm.add(newItem)
             try! realm.commitWrite()

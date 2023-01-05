@@ -3,6 +3,7 @@ PODS:
     - Charts/Core (= 4.1.0)
   - Charts/Core (4.1.0):
     - SwiftAlgorithms (~> 1.0)
+  - DropDown (2.3.13)
   - Realm (10.29.0):
     - Realm/Headers (= 10.29.0)
   - Realm/Headers (10.29.0)
@@ -13,12 +14,14 @@ PODS:
 
 DEPENDENCIES:
   - Charts
+  - DropDown
   - RealmSwift
   - TinyConstraints
 
 SPEC REPOS:
   trunk:
     - Charts
+    - DropDown
     - Realm
     - RealmSwift
     - SwiftAlgorithms
@@ -26,11 +29,12 @@ SPEC REPOS:
 
 SPEC CHECKSUMS:
   Charts: 354f86803d11d9c35de280587fef50d1af063978
+  DropDown: 8a2116376c1981888557f72ec2ffc9a5e0e456ec
   Realm: 5596770daeff1ad76c8eb10d5947dc10472da779
   RealmSwift: 35d8d318b7e5a8dbc7096c2a243184e4d19abcc0
   SwiftAlgorithms: 38dda4731d19027fdeee1125f973111bf3386b53
   TinyConstraints: 7b7ccc0c485bb3bb47082138ff28bc33cd49897f
 
-PODFILE CHECKSUM: 8a269c92e728d1aa0f41fb80ac922b77963869f9
+PODFILE CHECKSUM: 964f1bc2f25a3c86fec69e105718098623208140
 
 COCOAPODS: 1.11.3

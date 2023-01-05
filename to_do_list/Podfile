@@ -19,5 +19,6 @@ target 'to_do_list' do
   pod 'RealmSwift'
   pod 'Charts' 
   pod 'TinyConstraints'
+  pod 'DropDown'
 
 end

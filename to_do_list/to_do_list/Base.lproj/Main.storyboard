@@ -18,7 +18,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <tableView clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="-1" estimatedSectionHeaderHeight="-1" sectionFooterHeight="-1" estimatedSectionFooterHeight="-1" translatesAutoresizingMaskIntoConstraints="NO" id="eJA-CH-y9W">
-                                <rect key="frame" x="0.0" y="92" width="414" height="671"/>
+                                <rect key="frame" x="0.0" y="40" width="414" height="723"/>
                                 <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                             </tableView>
                         </subviews>
@@ -31,7 +31,7 @@
                             <constraint firstItem="eJA-CH-y9W" firstAttribute="top" secondItem="8bC-Xf-vdC" secondAttribute="topMargin" constant="-52" id="vi1-Sj-rls"/>
                         </constraints>
                     </view>
-                    <navigationItem key="navigationItem" title="To Do List" largeTitleDisplayMode="always" id="c2W-xa-5W4">
+                    <navigationItem key="navigationItem" title="To Do List" largeTitleDisplayMode="never" id="c2W-xa-5W4">
                         <barButtonItem key="rightBarButtonItem" systemItem="add" id="rjw-kr-i4g">
                             <color key="tintColor" systemColor="linkColor"/>
                             <connections>

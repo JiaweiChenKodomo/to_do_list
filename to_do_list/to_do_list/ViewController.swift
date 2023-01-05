@@ -8,6 +8,7 @@
 import RealmSwift
 import UIKit
 import Foundation
+import DropDown
 /*
  - show to do list items
  - to add new items
@@ -58,6 +59,16 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     
     var timer: Timer!
     
+    // Dropdown menu
+    let menu: DropDown = {
+        let menu = DropDown()
+        menu.dataSource = [
+            "Postpone",
+            "Delete"
+        ]
+        return menu
+    } ()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
@@ -69,16 +80,9 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         table.delegate = self
         table.dataSource = self
         
+        
         // Updates every 0.5 minute.
         timer = Timer.scheduledTimer(timeInterval: 30.0, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
-        
-//        let refreshBut = UIButton(type: .system)
-//        refreshBut.frame = CGRect(x: 15, y: 700, width: 100, height: 50)
-//        refreshBut.setTitle("Refresh", for: .normal)
-//        refreshBut.layer.borderWidth = 1.0
-//        refreshBut.layer.borderColor = UIColor.blue.cgColor
-//        refreshBut.addTarget(self, action: #selector(refresh), for: .touchUpInside)
-//        self.view.addSubview(refreshBut)
         
         let statsBut = UIButton(type: .system)
         statsBut.frame = CGRect(x: 145, y: 700, width: 100, height: 50)
@@ -87,8 +91,24 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         statsBut.layer.borderColor = UIColor.blue.cgColor
         statsBut.addTarget(self, action: #selector(didTapStat), for: .touchUpInside)
         self.view.addSubview(statsBut)
+        
         // left bar buttom
-        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(didTapDelete))
+        //navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(didTapDelete))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(didTapEdit))
+        
+        menu.anchorView = self.view
+        menu.bottomOffset = CGPoint(x: 0, y:((table.frame.minY) + 52)) // 52 is the safty distance set in canvas. Should parameterize everything.
+        menu.selectionAction = { rowSelected, _ in
+            switch rowSelected {
+            case 0:
+                self.didTapPostpone()
+            case 1:
+                self.didTapDelete()
+            default:
+                return
+            }
+            
+        }
         
         // add long press. From https://juejin.cn/post/6844903543237771272.
         table.isEditing = false
@@ -109,8 +129,8 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        // view data on the first page
-        dateFormatter.dateFormat = "YY/MM/dd"
+        // view data on the first page. Note YY is for week-year. yy is for calendar year.
+        dateFormatter.dateFormat = "yy/MM/dd"
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         
         var colorSign = UIColor.clear
@@ -174,6 +194,11 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         }
         
     }
+    func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
+        // This reverses the selection.
+        deleteIndex.remove(indexPath.row)
+    }
+    
     
     @IBAction func didTapAddButton() {
         guard let vc = storyboard?.instantiateViewController(withIdentifier: "enter") as? EntryViewController else {
@@ -199,7 +224,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     @objc func didTapDelete() {
         
         if deleteIndex.isEmpty {
-            let alert = UIAlertController(title: "Long press to select items to delete", message: "", preferredStyle: .alert)
+            let alert = UIAlertController(title: "Long press and then tap to select items to delete", message: "", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: nil))
             self.present(alert, animated: true)
             
@@ -230,6 +255,57 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         self.present(alert, animated: true)
 
+    }
+    
+    @objc func didTapPostpone() {
+        // postpone items in bulk.
+        if deleteIndex.isEmpty {
+            let alert = UIAlertController(title: "Long press and then tap to select items to postpone", message: "", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: nil))
+            self.present(alert, animated: true)
+            
+            return
+            
+        }
+        
+        let alert = UIAlertController(title: "Postpone those " + String(deleteIndex.count) + " tasks?", message: "How many days to postpone?", preferredStyle: .alert)
+        
+        alert.addTextField{ textField in
+            textField.placeholder = "7"
+        }
+        
+        alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: {(action: UIAlertAction!) in
+            
+            let textField = alert.textFields?.first
+            
+            self.realm.beginWrite()
+            
+            let addedDays = Double(textField!.text!) ?? 7.0
+
+            for index in self.deleteIndex {
+                let myItem = self.data[index]
+                myItem.date = myItem.date.addingTimeInterval(addedDays * 86400)
+            }
+            try! self.realm.commitWrite()
+            self.table.isEditing = false
+            self.deleteIndex = [] // Important!
+//            print(self.deleteIndex)
+            self.refresh()
+            
+        }))
+        alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: {(action: UIAlertAction!) in
+            
+            self.table.isEditing = false
+        }))
+        
+        self.present(alert, animated: true)
+
+    }
+    
+    
+    @objc func didTapEdit() {
+        // Shows the drop down menu
+        menu.show()
     }
     
     @objc func refresh() {

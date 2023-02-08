@@ -120,6 +120,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     
     @objc func didBatch() {
         if let text = textField.text, !text.isEmpty {
+            let KR = (textFieldKR.text?.isEmpty ?? true) ? "(No KR)" : textFieldKR.text
             let date = datePicker.date
             let budget = Double(textFieldBudget.text!) ?? 0.0
             let batchNo = Int(textFieldBatchNo.text!) ?? 1
@@ -130,7 +131,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
             for aa in 0..<batchNo {
                 let newItem = checkListItem()
                 newItem.date = date.advanced(by: Double(dayStep * aa))
-                newItem.item = text
+                newItem.item = text + " \u{21e8} " + (KR ?? "(No KR)")
                 newItem.budget = budget
                 realm.add(newItem)
             }

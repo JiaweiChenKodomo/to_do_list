@@ -20,5 +20,6 @@ target 'to_do_list' do
   pod 'Charts' 
   pod 'TinyConstraints'
   pod 'DropDown'
+  pod 'CalendarKit'
 
 end

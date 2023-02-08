@@ -20,6 +20,9 @@
 		4E1DFF2E2713A5B2009AF2FC /* EntryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1DFF2D2713A5B2009AF2FC /* EntryViewController.swift */; };
 		4E1DFF302713A5DA009AF2FC /* ViewViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1DFF2F2713A5DA009AF2FC /* ViewViewController.swift */; };
 		4E412032271779D5009FBE30 /* StatsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E412031271779D5009FBE30 /* StatsViewController.swift */; };
+		4E554835296E7CF500740ABC /* ScheduleViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E554834296E7CF500740ABC /* ScheduleViewController.swift */; };
+		4E5548432970E25700740ABC /* EKWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5548422970E25700740ABC /* EKWrapper.swift */; };
+		4E55484929747C6700740ABC /* AddScheduleEventViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E55484829747C6700740ABC /* AddScheduleEventViewController.swift */; };
 		4E9B395D2750A144007D91B8 /* ModViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E9B395C2750A144007D91B8 /* ModViewController.swift */; };
 		4EEF9A0D27AFA6CB005F48B6 /* FocusViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEF9A0C27AFA6CB005F48B6 /* FocusViewController.swift */; };
 		73F6CCA92007CBBD203E8C1E /* Pods_to_do_list.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 478E09B593659DB9DDC55213 /* Pods_to_do_list.framework */; };
@@ -65,6 +68,9 @@
 		4E1DFF2D2713A5B2009AF2FC /* EntryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryViewController.swift; sourceTree = "<group>"; };
 		4E1DFF2F2713A5DA009AF2FC /* ViewViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewViewController.swift; sourceTree = "<group>"; };
 		4E412031271779D5009FBE30 /* StatsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsViewController.swift; sourceTree = "<group>"; };
+		4E554834296E7CF500740ABC /* ScheduleViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleViewController.swift; sourceTree = "<group>"; };
+		4E5548422970E25700740ABC /* EKWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EKWrapper.swift; sourceTree = "<group>"; };
+		4E55484829747C6700740ABC /* AddScheduleEventViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddScheduleEventViewController.swift; sourceTree = "<group>"; };
 		4E9B395C2750A144007D91B8 /* ModViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModViewController.swift; sourceTree = "<group>"; };
 		4EEF9A0C27AFA6CB005F48B6 /* FocusViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusViewController.swift; sourceTree = "<group>"; };
 		5B5234EEC668B21B8FDC38B2 /* Pods-to_do_listTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-to_do_listTests.debug.xcconfig"; path = "Target Support Files/Pods-to_do_listTests/Pods-to_do_listTests.debug.xcconfig"; sourceTree = "<group>"; };
@@ -133,6 +139,9 @@
 				4E1DFEFF2713933A009AF2FC /* SceneDelegate.swift */,
 				4E1DFF012713933A009AF2FC /* ViewController.swift */,
 				4E1DFF032713933A009AF2FC /* Main.storyboard */,
+				4E55484829747C6700740ABC /* AddScheduleEventViewController.swift */,
+				4E554834296E7CF500740ABC /* ScheduleViewController.swift */,
+				4E5548422970E25700740ABC /* EKWrapper.swift */,
 				4E1DFF062713933C009AF2FC /* Assets.xcassets */,
 				4E1799D0282A291000D01493 /* snow1.sks */,
 				4E1DFF082713933C009AF2FC /* LaunchScreen.storyboard */,
@@ -426,13 +435,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				4E1DFF022713933A009AF2FC /* ViewController.swift in Sources */,
+				4E55484929747C6700740ABC /* AddScheduleEventViewController.swift in Sources */,
 				4E1DFF2E2713A5B2009AF2FC /* EntryViewController.swift in Sources */,
 				4E1DFF302713A5DA009AF2FC /* ViewViewController.swift in Sources */,
+				4E554835296E7CF500740ABC /* ScheduleViewController.swift in Sources */,
 				4EEF9A0D27AFA6CB005F48B6 /* FocusViewController.swift in Sources */,
 				4E9B395D2750A144007D91B8 /* ModViewController.swift in Sources */,
 				4E1DFEFE2713933A009AF2FC /* AppDelegate.swift in Sources */,
 				4E412032271779D5009FBE30 /* StatsViewController.swift in Sources */,
 				4E1DFF002713933A009AF2FC /* SceneDelegate.swift in Sources */,
+				4E5548432970E25700740ABC /* EKWrapper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

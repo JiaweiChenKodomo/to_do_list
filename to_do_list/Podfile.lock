@@ -1,18 +1,20 @@
 PODS:
+  - CalendarKit (1.1.6)
   - Charts (4.1.0):
     - Charts/Core (= 4.1.0)
   - Charts/Core (4.1.0):
     - SwiftAlgorithms (~> 1.0)
   - DropDown (2.3.13)
-  - Realm (10.29.0):
-    - Realm/Headers (= 10.29.0)
-  - Realm/Headers (10.29.0)
-  - RealmSwift (10.29.0):
-    - Realm (= 10.29.0)
+  - Realm (10.33.0):
+    - Realm/Headers (= 10.33.0)
+  - Realm/Headers (10.33.0)
+  - RealmSwift (10.33.0):
+    - Realm (= 10.33.0)
   - SwiftAlgorithms (1.0.0)
   - TinyConstraints (4.0.2)
 
 DEPENDENCIES:
+  - CalendarKit
   - Charts
   - DropDown
   - RealmSwift
@@ -20,6 +22,7 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - CalendarKit
     - Charts
     - DropDown
     - Realm
@@ -28,13 +31,14 @@ SPEC REPOS:
     - TinyConstraints
 
 SPEC CHECKSUMS:
+  CalendarKit: c76fa678d94cb0f3e7da2a0695c2989fe407cc2b
   Charts: 354f86803d11d9c35de280587fef50d1af063978
   DropDown: 8a2116376c1981888557f72ec2ffc9a5e0e456ec
-  Realm: 5596770daeff1ad76c8eb10d5947dc10472da779
-  RealmSwift: 35d8d318b7e5a8dbc7096c2a243184e4d19abcc0
+  Realm: d4f810e161fa2c2c589b9860b6eb09238deacd73
+  RealmSwift: cef9946f09f2333a8f2ac8bac4f8de52fb9f5ac3
   SwiftAlgorithms: 38dda4731d19027fdeee1125f973111bf3386b53
   TinyConstraints: 7b7ccc0c485bb3bb47082138ff28bc33cd49897f
 
-PODFILE CHECKSUM: 964f1bc2f25a3c86fec69e105718098623208140
+PODFILE CHECKSUM: 2ee4e9d6c0a26338fb5cd815b750704ccbc35369
 
 COCOAPODS: 1.11.3

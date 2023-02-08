@@ -113,8 +113,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         }() // This is in fact today's end.
 
         let twoWeeksAgoEnd: Date = {
-          let components = DateComponents(day: -days)
-          return Calendar.current.date(byAdding: components, to: todayEnd)!
+            let components = DateComponents(day: -days)
+            return Calendar.current.date(byAdding: components, to: todayEnd)!
         }()
         setData3(startDay: twoWeeksAgoEnd, endDay: todayEnd, wdays: wdays)
         

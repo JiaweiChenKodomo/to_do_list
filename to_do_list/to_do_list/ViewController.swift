@@ -9,6 +9,7 @@ import RealmSwift
 import UIKit
 import Foundation
 import DropDown
+
 /*
  - show to do list items
  - to add new items
@@ -27,13 +28,6 @@ class checkListItem: Object {
     @objc dynamic var startTime: Date = Date()
     @objc dynamic var timeSpent: TimeInterval = 0.0
     
-    
-//    let title: String
-//    var isChecked: Bool = false
-//
-//    init(title: String) {
-//        self.title = title
-//    }
 }
 
 class dailyPerfEval: Object {
@@ -42,7 +36,9 @@ class dailyPerfEval: Object {
     @objc dynamic var date: Date = Date()
 }
 
-class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource {
+
+
+class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource, UNUserNotificationCenterDelegate {
     
     @IBOutlet var table: UITableView!
     //@IBOutlet var scroll: UIScrollView!
@@ -57,6 +53,8 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     
     private var deleteIndex:Set<Int> = []
     
+    private let center = UNUserNotificationCenter.current()
+    
     var timer: Timer!
     
     // Dropdown menu
@@ -64,7 +62,9 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         let menu = DropDown()
         menu.dataSource = [
             "Postpone",
-            "Delete"
+            "Delete",
+            "Statistics",
+            "Schedule"
         ]
         return menu
     } ()
@@ -84,17 +84,17 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         // Updates every 0.5 minute.
         timer = Timer.scheduledTimer(timeInterval: 30.0, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
         
-        let statsBut = UIButton(type: .system)
-        statsBut.frame = CGRect(x: 145, y: 700, width: 100, height: 50)
-        statsBut.setTitle("Stats", for: .normal)
-        statsBut.layer.borderWidth = 1.0
-        statsBut.layer.borderColor = UIColor.blue.cgColor
-        statsBut.addTarget(self, action: #selector(didTapStat), for: .touchUpInside)
-        self.view.addSubview(statsBut)
+//        let statsBut = UIButton(type: .system)
+//        statsBut.frame = CGRect(x: 145, y: 700, width: 100, height: 50)
+//        statsBut.setTitle("Schedule", for: .normal)
+//        statsBut.layer.borderWidth = 1.0
+//        statsBut.layer.borderColor = UIColor.blue.cgColor
+//        statsBut.addTarget(self, action: #selector(didTapSchedule), for: .touchUpInside)
+//        self.view.addSubview(statsBut)
         
         // left bar buttom
         //navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(didTapDelete))
-        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(didTapEdit))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(didTapEdit))
         
         menu.anchorView = self.view
         menu.bottomOffset = CGPoint(x: 0, y:((table.frame.minY) + 52)) // 52 is the safty distance set in canvas. Should parameterize everything.
@@ -104,11 +104,17 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
                 self.didTapPostpone()
             case 1:
                 self.didTapDelete()
+            case 2:
+                self.didTapStat()
+            case 3:
+                self.didTapSchedule()
             default:
                 return
             }
             
         }
+        
+        menu.dismissMode = .onTap
         
         // add long press. From https://juejin.cn/post/6844903543237771272.
         table.isEditing = false
@@ -221,6 +227,15 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         navigationController?.pushViewController(vc, animated: true)
     }
     
+    @objc func didTapSchedule() {
+        guard let vc = storyboard?.instantiateViewController(withIdentifier: "schedule") as? ScheduleViewController else {
+            return
+        }
+        navigationController?.pushViewController(vc, animated: true)
+//        let vc = ScheduleViewController()
+//        navigationController?.pushViewController(vc, animated: true)
+    }
+    
     @objc func didTapDelete() {
         
         if deleteIndex.isEmpty {
@@ -236,10 +251,21 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: {(action: UIAlertAction!) in
             self.realm.beginWrite()
-//            self.realm.delete(myItem)
             for index in self.deleteIndex {
+                
                 let myItem = self.data[index]
-                self.realm.delete(myItem)
+                if (!myItem.finished && myItem.checkIn) {
+                    // Check out first. Not able to do it correctly here, so prompt user to do it in the detailed page.
+                    let alert2 = UIAlertController(title: "Check out this task first!", message: myItem.item, preferredStyle: .alert)
+                    
+                    alert2.addAction(UIAlertAction(title: "Dismiss", style: .cancel))
+                    
+                    self.present(alert2, animated: true)
+                    
+                } else {
+                    self.realm.delete(myItem)
+                }
+                
             }
             try! self.realm.commitWrite()
             self.table.isEditing = false
@@ -251,9 +277,11 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: {(action: UIAlertAction!) in
             
             self.table.isEditing = false
+            self.deleteIndex = [] // Important!
         }))
         
         self.present(alert, animated: true)
+    
 
     }
     
@@ -296,6 +324,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: {(action: UIAlertAction!) in
             
             self.table.isEditing = false
+            self.deleteIndex = [] // Important!
         }))
         
         self.present(alert, animated: true)
@@ -309,9 +338,12 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     }
     
     @objc func refresh() {
-        data = realm.objects(checkListItem.self).map({ $0 })
-        data = data.sorted(by: {$0.date<$1.date}) //Now list ordered by deadline ASC
-        table.reloadData()
+        // Will not refresh view if is editing.
+        if !table.isEditing {
+            data = realm.objects(checkListItem.self).map({ $0 })
+            data = data.sorted(by: {$0.date<$1.date}) //Now list ordered by deadline ASC
+            table.reloadData()
+        }
     }
 
 }
@@ -329,6 +361,7 @@ extension ViewController: UIGestureRecognizerDelegate {
             }
             else {
                 self.table!.setEditing(false, animated:true)
+                self.deleteIndex = [] // Important!
             }
         }
     }

@@ -22,7 +22,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     
     private let center = UNUserNotificationCenter.current()
     
-    private var canNotify = true;
+    public var canNotify = true;
     
     private let xOffSet = 10;
     private let yOffSet = 40;

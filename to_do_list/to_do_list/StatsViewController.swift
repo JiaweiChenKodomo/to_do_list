@@ -709,7 +709,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
-            //print(rawVal[aa])
+            print(rawVal[aa])
             yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
             aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights.last!))
             aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights.last!))
@@ -775,7 +775,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         }
         
         aboveAverageStreak = 0
-        while aveVal.popLast()!.y <= yVal.popLast()!.y || aveVal2.popLast()!.y <= yVal2.popLast()!.y {
+        while (!aveVal.isEmpty) && (aveVal.popLast()!.y <= yVal.popLast()!.y || aveVal2.popLast()!.y <= yVal2.popLast()!.y) {
             aboveAverageStreak += 1
         }
         

@@ -750,8 +750,15 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 }
                 
             } else {
-                dayEval.first?.tot_finish += myItem.budget
-                //print(dayEval.first?.tot_finish)
+                if (dayEval.first == nil) {
+                    //print("initializing record")
+                    let newDayEval = dailyPerfEval()
+                    newDayEval.tot_finish += myItem.budget
+                    realm.add(newDayEval)
+                } else {
+                    //print("original record %f", dayEval.first?.tot_time)
+                    dayEval.first?.tot_finish += myItem.budget
+                }
             }
             myItem.startTime = Date()
             

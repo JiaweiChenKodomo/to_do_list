@@ -309,7 +309,9 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             return
         }
         
-        let days = Int(todayEnd.timeIntervalSince(startDay) / (3600*24))
+        //let days = Int(todayEnd.timeIntervalSince(startDay) / (3600*24)) // This is not working for Daylight Saving Time.
+        let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: startDay, to: todayEnd)
+        let days = diffTime.day ?? 0
         
 //        print("***")
 //        print(format.string(from: fourWeeksAgoEnd))

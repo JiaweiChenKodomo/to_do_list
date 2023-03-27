@@ -22,6 +22,8 @@ class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollVi
     
     public var checkInTime: Date?
     
+    @IBOutlet weak var progressBar: UIProgressView!
+    
     private let store =  EKEventStore()
     
     private let center = UNUserNotificationCenter.current()
@@ -135,6 +137,8 @@ class FocusViewController: UIViewController, EKEventEditViewDelegate, UIScrollVi
         
         label.text = formattedString
         label2.text = formattedString2
+        
+        progressBar.progress = 1.0 - Float(time_elapsed / addedTime)
         
         if (!animationPlayed && time_elapsed >= addedTime) {
             addSnow()

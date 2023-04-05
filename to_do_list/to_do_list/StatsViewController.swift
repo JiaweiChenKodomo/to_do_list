@@ -152,10 +152,12 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         streakTextField.text = "Above-average streak: " + String(aboveAverageStreak)
         streakTextField.frame = CGRect(x: 30, y: yStart - 20, width: 320, height: 50)
+        streakTextField.isUserInteractionEnabled = false
         scrollView.addSubview(streakTextField)
         
         workStreakTextField.text = "Working streak: " + String(workStreak)
         workStreakTextField.frame = CGRect(x: 30, y: yStart + 20, width: 320, height: 50)
+        workStreakTextField.isUserInteractionEnabled = false
         scrollView.addSubview(workStreakTextField)
         
         fromLabel.text = "From (exclusive):"
@@ -182,7 +184,6 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         textFieldMid.frame = CGRect(x: 15, y: yStart + 3 * yOffset, width: 200, height: 50)
         textFieldMid.borderStyle = UITextField.BorderStyle.roundedRect
         textFieldMid.text = "Put window size"
-        //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldMid)
         
         let plotBut = UIButton(type: .system)
@@ -200,7 +201,6 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         textFieldPeriod.text = "Put period of x-label"
         //self.view.addSubview(textFieldUp)
         scrollView.addSubview(textFieldPeriod)
-        
         
         
         textField.delegate = self

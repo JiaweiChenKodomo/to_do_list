@@ -155,7 +155,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         streakTextField.isUserInteractionEnabled = false
         scrollView.addSubview(streakTextField)
         
-        workStreakTextField.text = "Working streak: " + String(workStreak)
+        workStreakTextField.text = "2+ Working streak: " + String(workStreak)
         workStreakTextField.frame = CGRect(x: 30, y: yStart + 20, width: 320, height: 50)
         workStreakTextField.isUserInteractionEnabled = false
         scrollView.addSubview(workStreakTextField)
@@ -449,8 +449,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         }
         
         aboveAverageStreak = 0
-        workStreak = yVal.count - (yVal.lastIndex(where: {$0.y == 0}) ?? -1) - 1
-        while (!aveVal.isEmpty) && (aveVal.last!.y <= yVal.last!.y || aveVal2.last!.y <= yVal2.last!.y) {
+        workStreak = yVal.count - (yVal.lastIndex(where: {$0.y <= 2}) ?? -1) - 1
+        while (!aveVal.isEmpty) && (aveVal.last!.y < yVal.last!.y || aveVal2.last!.y < yVal2.last!.y) {
             aveVal.removeLast()
             yVal.removeLast()
             aveVal2.removeLast()
@@ -464,7 +464,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         lineChart.data = data
         
         self.streakTextField.text = "Above-average streak: " + String(aboveAverageStreak)
-        self.workStreakTextField.text = "Working streak: " + String(workStreak)
+        self.workStreakTextField.text = "2+ Working streak: " + String(workStreak)
     }
     
     

@@ -43,7 +43,16 @@ class ScheduleViewController: DayViewController, EKEventEditViewDelegate {
     
     private func requestAccessToCalendar() {
         // Request access to the events
-        eventStore.requestAccess(to: .event) { [weak self] granted, error in
+//        eventStore.requestAccess(to: .event) { [weak self] granted, error in
+//            // Handle the response to the request.
+//            DispatchQueue.main.async {
+//                guard let self = self else { return }
+//                self.initializeStore()
+//                self.subscribeToNotifications()
+//                self.reloadData()
+//            }
+//        }
+        eventStore.requestFullAccessToEvents { [weak self] granted, error in
             // Handle the response to the request.
             DispatchQueue.main.async {
                 guard let self = self else { return }

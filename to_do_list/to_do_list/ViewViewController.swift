@@ -12,6 +12,7 @@ import EventKitUI
 
 class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollViewDelegate, UNUserNotificationCenterDelegate {
     
+    
     public var item: checkListItem?
     
     public var deletionHandler: (() -> Void)?
@@ -51,6 +52,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     private let modBut = UIButton(type: .system)
     private let addCalBut = UIButton(type: .system)
     private let focusBut = UIButton(type: .system)
+    private let splitBut = UIButton(type: .system)
     
     var timer: Timer!
     
@@ -240,6 +242,13 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         //self.view.addSubview(focusBut)
         scrollView.addSubview(focusBut)
         
+        splitBut.frame = CGRect(x: 15, y: yOffSet + deltaY*7 + textHeight + 350, width: 100, height: 50)
+        splitBut.setTitle("Split Task", for: .normal)
+        splitBut.layer.borderWidth = 1.0
+        splitBut.layer.borderColor = UIColor.blue.cgColor
+        splitBut.addTarget(self, action: #selector(didSplit), for: .touchUpInside)
+        scrollView.addSubview(splitBut)
+        
         //print(self.view.subviews.count)
         for currentSubView in self.view.subviews {
             currentSubView.removeFromSuperview()
@@ -325,8 +334,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
     }
     
     @objc private func didAddCal() {
-        
-        store.requestAccess(to: .event) { success , error in
+        store.requestFullAccessToEvents { success , error in
             if success, error == nil {
                 DispatchQueue.main.async {
                     let store = self.store
@@ -339,15 +347,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     let vc = EKEventEditViewController()
                     vc.eventStore = store
                     vc.event = newEvent
-                    vc.editViewDelegate = self // This is important. 
+                    vc.editViewDelegate = self // This is important.
                     
                     self.present(vc, animated: true, completion: nil)
-                    
                 }
             }
         }
-        
-        
     }
     
     func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
@@ -386,6 +391,80 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
         
         self.present(alert, animated: true)
     }
+    
+    @objc private func didSplit() {
+        guard let myItem = self.item else {
+            return
+        }
+        
+        // Check if checked out. If not, check out first.
+        if item!.checkIn {
+            didCheckOut()
+        }
+        
+        let alert = UIAlertController(title: "Split this task? (Need to be days before the DL)", message: "", preferredStyle: .alert)
+        
+        alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: {(action: UIAlertAction!) in
+            
+            let text_KR = myItem.item.components(separatedBy: "\u{21e8}")
+            
+            let diffTime = Calendar.current.dateComponents([.day, .hour, .minute], from: Date(), to: myItem.date)
+            
+            let days = diffTime.day ?? 0
+            
+            if days <= 0 {
+                return
+            }
+            
+            let batchNo = days
+            let dayStep = -86400
+            
+            self.realm.beginWrite()
+            for aa in 0..<batchNo {
+                let newItem = checkListItem()
+                newItem.date = myItem.date.advanced(by: Double(dayStep * aa))
+                newItem.item = text_KR[0] + " " + String(batchNo - aa) + "/" + String(batchNo) + " \u{21e8} " + text_KR[1]
+                newItem.budget = myItem.budget / Double(batchNo)
+                self.realm.add(newItem)
+            }
+            
+            // Delete this item
+            self.realm.delete(myItem)
+            try! self.realm.commitWrite()
+            self.deletionHandler?()
+            self.navigationController?.popToRootViewController(animated: true)
+        }))
+        alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: nil))
+        
+        self.present(alert, animated: true)
+    }
+    
+//    @objc func didBatch() {
+//        if let text = textField.text, !text.isEmpty {
+//            let KR = (textFieldKR.text?.isEmpty ?? true) ? "(No KR)" : textFieldKR.text
+//            let date = datePicker.date
+//            let budget = Double(textFieldBudget.text!) ?? 0.0
+//            let batchNo = Int(textFieldBatchNo.text!) ?? 1
+//            let dayStep = (Int(textFieldStep.text!) ?? 1) * 86400 //3600 * 24 = 86400
+//            
+//            // write new item to realm
+//            realm.beginWrite()
+//            for aa in 0..<batchNo {
+//                let newItem = checkListItem()
+//                newItem.date = date.advanced(by: Double(dayStep * aa))
+//                newItem.item = text + " \u{21e8} " + (KR ?? "(No KR)")
+//                newItem.budget = budget
+//                realm.add(newItem)
+//            }
+//            try! realm.commitWrite()
+//
+//            completionHandler?()
+//            navigationController?.popToRootViewController(animated: true)
+//        }
+//        else {
+//            //print("Add something")
+//        }
+//    }
     
     @objc private func didCheckIn() {
         guard let myItem = self.item else {

@@ -6,7 +6,7 @@
 	<string>Please allow access to contacts to add event locations. The info will not be used.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Please allow access to locations to add event locations. The info will not be used. </string>
-	<key>NSCalendarsUsageDescription</key>
+	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Allow access to Calender to save evnts</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

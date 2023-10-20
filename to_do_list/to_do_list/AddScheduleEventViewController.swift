@@ -96,7 +96,7 @@ class AddScheduleEventViewController: UIViewController, UITextFieldDelegate {
         let repeatEndTime = repeatEndTimeField.date
         
         // Build EK event
-        store.requestAccess(to: .event) { success , error in
+        store.requestFullAccessToEvents { success , error in
             if success, error == nil {
                 DispatchQueue.main.async {
                     let store = self.store
@@ -125,6 +125,7 @@ class AddScheduleEventViewController: UIViewController, UITextFieldDelegate {
                 }
             }
         }
+        
         // Go back to previous page
         completionHandler?()
         navigationController?.popToRootViewController(animated: true)

@@ -39,6 +39,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     
     var period = 7
     
+    var weekDayValTable = [Int]()
+    
     var yStart = 400
     var yOffset = 60
     
@@ -106,7 +108,35 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
 //    }
     
     func stringForValue(_ value: Double, axis: AxisBase?) -> String {
-        return String(Int(value) % period)
+        if floor(value) != value { // Only have decimal at integer points.
+            return ""
+        }
+        
+        let ind = period - 1 - Int(value) % period
+        
+        let dayOfWeek = weekDayValTable[Int(value) % 7]
+        
+        var dayOfWeekStr: String
+        
+        switch dayOfWeek {
+        case 2:
+            dayOfWeekStr = "M"
+        case 3:
+            dayOfWeekStr = "T"
+        case 4:
+            dayOfWeekStr = "W"
+        case 5:
+            dayOfWeekStr = "Th"
+        case 6:
+            dayOfWeekStr = "F"
+        case 0:
+            dayOfWeekStr = "Sa"
+        default:
+            dayOfWeekStr = "Su"
+        }
+        
+        
+        return String(ind) + "; " + dayOfWeekStr
     }
 
     override func viewDidLoad() {
@@ -285,6 +315,24 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             return Calendar.current.date(byAdding: components, to: todayStart)!
         }() // This is in fact today's end.
         
+        let startDayOfWeek = (Calendar.current.component (.weekday, from: startDay))
+        
+        if weekDayValTable.isEmpty {
+            weekDayValTable.reserveCapacity(7)
+        
+            for aa in stride(from: 0, to: 7, by: 1) {
+                weekDayValTable.append((startDayOfWeek + 1 + aa) % 7)
+            }
+        } else {
+            for aa in stride(from: 0, to: 7, by: 1) {
+                weekDayValTable[aa] = (startDayOfWeek + 1 + aa) % 7
+            }
+        }
+            
+//        print(startDay)
+//        print(startDayOfWeek)
+        print(weekDayValTable)
+        
         
         let fourWeeksAgoEnd: Date = {
           let components = DateComponents(day: (2 - wdays))
@@ -379,17 +427,21 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             rawVal[index] += dayEval.tot_time
             rawVal2[index] += dayEval.tot_finish
             
+            
         }
         
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
-            yVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa]))
+            
+            yVal.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal[aa]))
 //            print(rawVal[aa])
-            yVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa]))
-            aveVal.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights.last!))
-            aveVal2.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights.last!))
-            aveVal3.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal[aa] * weights2.last!))
-            aveVal4.append(ChartDataEntry(x: Double(aa - wdays + 1), y: rawVal2[aa] * weights2.last!))
+            yVal2.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal2[aa]))
+            aveVal.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal[aa] * weights.last!))
+            aveVal2.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal2[aa] * weights.last!))
+            aveVal3.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal[aa] * weights2.last!))
+            aveVal4.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal2[aa] * weights2.last!))
+            
         } //Have to append to initialize the data.
+        
         
         //print(weights)
         for aa in stride(from: 0, to: wdays - 1, by: 1) {

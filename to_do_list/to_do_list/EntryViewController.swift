@@ -169,8 +169,17 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     @objc func didTapSaveButton() {
         if let text = textField.text, !text.isEmpty {
             let KR = (textFieldKR.text?.isEmpty ?? true) ? "(No KR)" : textFieldKR.text
-            let date = datePicker.date
+            var date = datePicker.date
             let budget = Double(textFieldBudget.text!) ?? 0.0
+            
+            // Adjust due date if not possible to fit budget before due date.
+            // Calculate the difference between the given date and the current date
+            let components = Calendar.current.dateComponents([.minute], from: Date(), to: date)
+            if Double(components.minute ?? 0) < budget * 60 {
+                var dateComponents = DateComponents()
+                dateComponents.minute = Int(budget * 60 - Double(components.minute ?? 0))
+                date = Calendar.current.date(byAdding: dateComponents, to: date) ?? date;
+            }
             
             // write new item to realm 
             realm.beginWrite()

@@ -425,6 +425,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 newItem.date = myItem.date.advanced(by: Double(dayStep * aa))
                 newItem.item = text_KR[0] + " " + String(batchNo - aa) + "/" + String(batchNo) + " \u{21e8} " + text_KR[1]
                 newItem.budget = myItem.budget / Double(batchNo)
+                newItem.timeSpent = myItem.timeSpent / Double(batchNo)
                 self.realm.add(newItem)
             }
             

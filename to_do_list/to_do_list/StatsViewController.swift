@@ -40,6 +40,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     var period = 7
     
     var weekDayValTable = [Int]()
+    var dateValTable = [Int]()
     
     var yStart = 400
     var yOffset = 60
@@ -116,6 +117,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         
         let dayOfWeek = weekDayValTable[Int(value) % 7]
         
+        let dayOfMonth = dateValTable[Int(value)]
+        
         var dayOfWeekStr: String
         
         switch dayOfWeek {
@@ -136,7 +139,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         }
         
         
-        return String(ind) + "; " + dayOfWeekStr
+        return String(dayOfMonth) + "; " + dayOfWeekStr
     }
 
     override func viewDidLoad() {
@@ -388,6 +391,12 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         var aveVal4 = [ChartDataEntry]()
         aveVal4.reserveCapacity(days) // Equal-weight average
         
+        dateValTable.reserveCapacity(days) // An array for date number. Can also store date, but that would be hard to display.
+        for aa in stride(from: 0, to: days, by: 1) {
+            dateValTable.append(0)
+        }
+        
+        
         var weights = [Double]()
         var weights2 = [Double]()
         var sumWeight = 0.0
@@ -426,6 +435,8 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             
             rawVal[index] += dayEval.tot_time
             rawVal2[index] += dayEval.tot_finish
+            
+            dateValTable[index] = (Calendar.current.dateComponents([.day], from: dayEval.date).day ?? 0)
             
             
         }

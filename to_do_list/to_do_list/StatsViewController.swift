@@ -334,7 +334,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             
 //        print(startDay)
 //        print(startDayOfWeek)
-        print(weekDayValTable)
+//        print(weekDayValTable)
         
         
         let fourWeeksAgoEnd: Date = {
@@ -373,6 +373,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         rawVal.reserveCapacity(days+wdays-1)
         var rawVal2 = [Double]()
         rawVal2.reserveCapacity(days+wdays-1)
+        
         for _ in stride(from: 0, to: days+wdays-1, by: 1) {
             rawVal.append(0.0)
             rawVal2.append(0.0)
@@ -392,10 +393,6 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         aveVal4.reserveCapacity(days) // Equal-weight average
         
         dateValTable.reserveCapacity(days) // An array for date number. Can also store date, but that would be hard to display.
-        for aa in stride(from: 0, to: days, by: 1) {
-            dateValTable.append(0)
-        }
-        
         
         var weights = [Double]()
         var weights2 = [Double]()
@@ -436,7 +433,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             rawVal[index] += dayEval.tot_time
             rawVal2[index] += dayEval.tot_finish
             
-            dateValTable[index] = (Calendar.current.dateComponents([.day], from: dayEval.date).day ?? 0)
+//
             
             
         }
@@ -451,7 +448,19 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             aveVal3.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal[aa] * weights2.last!))
             aveVal4.append(ChartDataEntry(x: Double((aa - wdays + 1)), y: rawVal2[aa] * weights2.last!))
             
-        } //Have to append to initialize the data.
+
+            
+        } 
+        //Have to append to initialize the data.
+        var dateComponent = DateComponents()
+        dateComponent.day = 1
+        var currentDate = startDay // Date is a Struct, which is a value type. So it can be coppied by assigning it.
+        var currentDay = 0
+        for aa in stride(from: 0, to: days, by: 1) {
+            currentDate = Calendar.current.date(byAdding: dateComponent, to: currentDate)!
+            currentDay = (Calendar.current.dateComponents([.day], from: currentDate).day ?? 0)
+            dateValTable.append(currentDay )
+        }
         
         
         //print(weights)

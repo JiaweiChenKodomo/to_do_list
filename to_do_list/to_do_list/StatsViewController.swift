@@ -113,8 +113,6 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             return ""
         }
         
-        let ind = period - 1 - Int(value) % period
-        
         let dayOfWeek = weekDayValTable[Int(value) % 7]
         
         let dayOfMonth = dateValTable[Int(value)]
@@ -393,6 +391,11 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         aveVal4.reserveCapacity(days) // Equal-weight average
         
         dateValTable.reserveCapacity(days) // An array for date number. Can also store date, but that would be hard to display.
+        if dateValTable.count < days {
+            for _ in stride(from: 0, to: (days - dateValTable.count), by: 1) {
+                dateValTable.append(0)
+            }
+        }
         
         var weights = [Double]()
         var weights2 = [Double]()
@@ -459,7 +462,7 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
         for aa in stride(from: 0, to: days, by: 1) {
             currentDate = Calendar.current.date(byAdding: dateComponent, to: currentDate)!
             currentDay = (Calendar.current.dateComponents([.day], from: currentDate).day ?? 0)
-            dateValTable.append(currentDay )
+            dateValTable[aa] = currentDay
         }
         
         

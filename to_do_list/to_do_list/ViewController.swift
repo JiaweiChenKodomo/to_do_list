@@ -27,6 +27,8 @@ class checkListItem: Object {
     @objc dynamic var finished: Bool = false
     @objc dynamic var startTime: Date = Date()
     @objc dynamic var timeSpent: TimeInterval = 0.0
+    @objc dynamic var tag: Int = 0
+    let KR = List<String>() // Will implement methods for OKR later.
     
 }
 
@@ -34,8 +36,23 @@ class dailyPerfEval: Object {
     @objc dynamic var tot_finish: Double = 0.0
     @objc dynamic var tot_time: Double = 0.0
     @objc dynamic var date: Date = Date()
+    let tagLog = List<Double>() //Breakdown of time use into areas.
+    let tagLogDone = List<Double>() //Breakdown of finished tasks into areas.
+
+    override init() {
+        super.init()
+        // Initialize tagLog and tagLogDone with default values
+        tagLog.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        tagLogDone.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    }
 }
 
+// When you open the realm, specify that the schema
+// is now using a newer version.
+let config = Realm.Configuration(
+    schemaVersion: 6)
+
+let tagDic = [0: " ", 1:"Lab", 2: "Research", 3: "Side", 4: "Study", 5: "Person"]
 
 
 class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource, UNUserNotificationCenterDelegate {
@@ -43,7 +60,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     @IBOutlet var table: UITableView!
     //@IBOutlet var scroll: UIScrollView!
     
-    private let realm = try! Realm()
+    private let realm = try! Realm(configuration: config)
     
     private let dateFormatter = DateFormatter()
     
@@ -143,7 +160,10 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         var textCol = UIColor.label
         
-        cell.textLabel?.text = dateFormatter.string(from: data[indexPath.row].date) + ", " + String(format: "%.1f", data[indexPath.row].budget) + ", " + data[indexPath.row].item
+        let tempText = dateFormatter.string(from: data[indexPath.row].date) + ", " + String(format: "%.1f", data[indexPath.row].budget) + ", "
+        let tempText2 = (tagDic[data[indexPath.row].tag] ?? " ") + ", " + data[indexPath.row].item
+        
+        cell.textLabel?.text = tempText + tempText2
         
         if (data[indexPath.row].finished) {
             //doneString = "Done!"

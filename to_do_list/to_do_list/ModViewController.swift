@@ -15,6 +15,18 @@ class ModViewController: UIViewController, UITextFieldDelegate {
     @IBOutlet var textField: UITextField!
     @IBOutlet var textFieldBudget: UITextField!
     @IBOutlet var datePicker: UIDatePicker!
+    
+    var textTagPopUp = UIButton()
+    
+    var yOffset = 600
+    var textHeight = 21
+    var fieldHeight = 52
+    var sSpacing = 5
+    var bSpacing = 15
+    var startY = 0
+    var xOffset = 50
+    
+    var tagID = 0
 
     private let realm = try! Realm()
     public var completionHandler: (() -> Void)?
@@ -29,8 +41,28 @@ class ModViewController: UIViewController, UITextFieldDelegate {
         textFieldBudget.delegate = self
         textFieldBudget.text = String(format: "%.1f", item!.budget)
         
+        textTagPopUp.frame = CGRect(x: xOffset, y: startY+yOffset, width: 100, height: textHeight)
+        var menuChildren: [UIMenuElement] = []
+        
+        for idx in 0...5 {
+            menuChildren.append(UIAction(title: tagDic[idx] ?? " ", handler: actionClosure))
+        }
+        textTagPopUp.menu = UIMenu(children: menuChildren)
+        textTagPopUp.showsMenuAsPrimaryAction = true
+        textTagPopUp.changesSelectionAsPrimaryAction = true
+        textTagPopUp.setTitleColor(.blue, for: .normal)
+        textTagPopUp.backgroundColor = .lightGray
+        textTagPopUp.setTitle("Tag", for: .normal)
+        self.view.addSubview(textTagPopUp)
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(didTapSaveButton))
+    }
+    
+    func actionClosure(action: UIAction) {
+        if let key = tagDic.first(where: { $0.value == action.title })?.key {
+            // use key
+            tagID = key
+        }
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -55,6 +87,7 @@ class ModViewController: UIViewController, UITextFieldDelegate {
             item!.date = date
             item!.item = text
             item!.budget = budget
+            item!.tag = tagID
             
             try! realm.commitWrite()
 

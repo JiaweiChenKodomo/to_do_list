@@ -426,6 +426,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 newItem.item = text_KR[0] + " " + String(batchNo - aa) + "/" + String(batchNo) + " \u{21e8} " + text_KR[1]
                 newItem.budget = myItem.budget / Double(batchNo)
                 newItem.timeSpent = myItem.timeSpent / Double(batchNo)
+                newItem.tag = myItem.tag
                 self.realm.add(newItem)
             }
             
@@ -608,6 +609,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         if (prevDayEval.first != nil) {
                             let newAddedHour = addedHour + prevDayEval.first!.tot_time
                             prevDayEval.first?.tot_time = max(0.0, newAddedHour)
+                            prevDayEval.first?.tagLog[myItem.tag] = max(0.0, newAddedHour)
                             addedHour = newAddedHour
                         }
                         thisDayStart = previousDayStart
@@ -618,6 +620,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     let newAddedHour = addedHour + dayEval.first!.tot_time
                     //print("new record %f", newAddedHour)
                     dayEval.first?.tot_time = max(0.0, newAddedHour)
+                    dayEval.first?.tagLog[myItem.tag] = max(0.0, newAddedHour)
                     addedHour = newAddedHour
                     //print("addded hour now %f", addedHour)
                     var thisDayStart = Calendar.current.startOfDay(for: Date())
@@ -635,6 +638,7 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         if (prevDayEval.first != nil) {
                             let newAddedHour = addedHour + prevDayEval.first!.tot_time
                             prevDayEval.first?.tot_time = max(0.0, newAddedHour)
+                            prevDayEval.first?.tagLog[myItem.tag] = max(0.0, newAddedHour)
                             addedHour = newAddedHour
                         }
                         thisDayStart = previousDayStart
@@ -645,11 +649,13 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     //print("initializing record")
                     let newDayEval = dailyPerfEval()
                     newDayEval.tot_time += addedHour
+                    newDayEval.tagLog[myItem.tag] += addedHour
                     newDayEval.date = Date() // set initial data on today.
                     self.realm.add(newDayEval)
                 } else {
                     //print("original record %f", dayEval.first?.tot_time)
                     dayEval.first?.tot_time += addedHour
+                    dayEval.first?.tagLog[myItem.tag] += addedHour
                 }
             }
             
@@ -698,11 +704,20 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     //print("initializing record")
                     let newDayEval = dailyPerfEval()
                     newDayEval.tot_time += elapsedTime
+                    newDayEval.tagLog[myItem.tag] += elapsedTime
                     newDayEval.date = myItem.startTime
                     realm.add(newDayEval)
                 } else {
                     //print("original record %f", dayEval.first?.tot_time)
                     dayEval.first?.tot_time += elapsedTime
+                    
+                    if dayEval.first?.tagLog.count ?? 0 < tagDic.count {
+                        dayEval.first?.tagLog.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                        dayEval.first?.tagLogDone.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    }
+                    
+                    dayEval.first?.tagLog[myItem.tag] += elapsedTime
+                    
                 }
                 // Change startTime to today
                 myItem.startTime = todayStart
@@ -719,10 +734,19 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                 //print("initializing record")
                 let newDayEval = dailyPerfEval()
                 newDayEval.tot_time += elapsedTime
+                newDayEval.tagLog[myItem.tag] += elapsedTime
                 realm.add(newDayEval)
             } else {
                 //print("original record %f", dayEval.first?.tot_time)
+                
+                if dayEval.first?.tagLog.count ?? 0 < tagDic.count {
+                    dayEval.first?.tagLog.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    dayEval.first?.tagLogDone.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                }
+                
                 dayEval.first?.tot_time += elapsedTime
+                dayEval.first?.tagLog[myItem.tag] += elapsedTime
+                
             }
             
             myItem.startTime = Date()
@@ -794,10 +818,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         let newDayEval = dailyPerfEval()
                         newDayEval.tot_time += elapsedTime
                         newDayEval.date = myItem.startTime
+                        newDayEval.tagLog[myItem.tag] += elapsedTime
                         realm.add(newDayEval)
                     } else {
                         //print("original record %f", dayEval.first?.tot_time)
                         dayEval2.first?.tot_time += elapsedTime
+                        dayEval2.first?.tagLog[myItem.tag] += elapsedTime
                     }
                     // Change startTime to today
                     myItem.startTime = todayStart
@@ -812,12 +838,16 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     //print("initializing record")
                     let newDayEval = dailyPerfEval()
                     newDayEval.tot_time += elapsedTime
+                    newDayEval.tagLog[myItem.tag] += elapsedTime
+                    newDayEval.tagLogDone[myItem.tag] += myItem.budget
                     newDayEval.tot_finish += myItem.budget
                     realm.add(newDayEval)
                 } else {
                     //print("original record %f", dayEval.first?.tot_time)
                     dayEval.first?.tot_time += elapsedTime
                     dayEval.first?.tot_finish += myItem.budget
+                    dayEval.first?.tagLog[myItem.tag] += elapsedTime
+                    dayEval.first?.tagLogDone[myItem.tag] += myItem.budget
                 }
                 
                 // Remove associated notifications on check-out
@@ -834,10 +864,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                     //print("initializing record")
                     let newDayEval = dailyPerfEval()
                     newDayEval.tot_finish += myItem.budget
+                    newDayEval.tagLogDone[myItem.tag] += myItem.budget
                     realm.add(newDayEval)
                 } else {
                     //print("original record %f", dayEval.first?.tot_time)
                     dayEval.first?.tot_finish += myItem.budget
+                    dayEval.first?.tagLogDone[myItem.tag] += myItem.budget
                 }
             }
             myItem.startTime = Date()
@@ -915,11 +947,13 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                             //print("initializing record")
                             let newDayEval = dailyPerfEval()
                             newDayEval.tot_time += elapsedTime
+                            newDayEval.tagLog[myItem.tag] += elapsedTime
                             newDayEval.date = myItem.startTime
                             self.realm.add(newDayEval)
                         } else {
                             //print("original record %f", dayEval.first?.tot_time)
                             dayEval2.first?.tot_time += elapsedTime
+                            dayEval2.first?.tagLog[myItem.tag] += elapsedTime
                         }
                         // Change startTime to today
                         myItem.startTime = todayStart
@@ -934,12 +968,16 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         //print("initializing record")
                         let newDayEval = dailyPerfEval()
                         newDayEval.tot_time += elapsedTime
+                        newDayEval.tagLog[myItem.tag] += elapsedTime
                         newDayEval.tot_finish += myItem.budget * ratio
+                        newDayEval.tagLogDone[myItem.tag] += myItem.budget * ratio
                         self.realm.add(newDayEval)
                     } else {
                         //print("original record %f", dayEval.first?.tot_time)
                         dayEval.first?.tot_time += elapsedTime
                         dayEval.first?.tot_finish += myItem.budget * ratio
+                        dayEval.first?.tagLog[myItem.tag] += elapsedTime
+                        dayEval.first?.tagLogDone[myItem.tag] += myItem.budget * ratio
                     }
                     
                     // Remove associated notifications on check-out
@@ -958,10 +996,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         //print("initializing record")
                         let newDayEval = dailyPerfEval()
                         newDayEval.tot_finish += myItem.budget * ratio
+                        newDayEval.tagLogDone[myItem.tag] += myItem.budget * ratio
                         self.realm.add(newDayEval)
                     } else {
                         //print("original record %f", dayEval.first?.tot_time)
                         dayEval.first?.tot_finish += myItem.budget * ratio
+                        dayEval.first?.tagLogDone[myItem.tag] += myItem.budget * ratio
                     }
                 }
                 
@@ -1005,11 +1045,13 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                             //print("initializing record")
                             let newDayEval = dailyPerfEval()
                             newDayEval.tot_time += elapsedTime
+                            newDayEval.tagLog[myItem.tag] += elapsedTime
                             newDayEval.date = myItem.startTime
                             self.realm.add(newDayEval)
                         } else {
                             //print("original record %f", dayEval.first?.tot_time)
                             dayEval2.first?.tot_time += elapsedTime
+                            dayEval2.first?.tagLog[myItem.tag] += elapsedTime
                         }
                         // Change startTime to today
                         myItem.startTime = todayStart
@@ -1025,11 +1067,15 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         let newDayEval = dailyPerfEval()
                         newDayEval.tot_time += elapsedTime
                         newDayEval.tot_finish += myItem.budget * ratio
+                        newDayEval.tagLog[myItem.tag] += elapsedTime
+                        newDayEval.tagLogDone[myItem.tag] += myItem.budget * ratio
                         self.realm.add(newDayEval)
                     } else {
                         //print("original record %f", dayEval.first?.tot_time)
                         dayEval.first?.tot_time += elapsedTime
                         dayEval.first?.tot_finish += myItem.budget * ratio
+                        dayEval.first?.tagLog[myItem.tag] += elapsedTime
+                        dayEval.first?.tagLogDone[myItem.tag] += myItem.budget * ratio
                     }
                     
                     // Remove associated notifications on check-out
@@ -1048,10 +1094,12 @@ class ViewViewController: UIViewController, EKEventEditViewDelegate, UIScrollVie
                         //print("initializing record")
                         let newDayEval = dailyPerfEval()
                         newDayEval.tot_finish += myItem.budget * ratio
+                        newDayEval.tagLogDone[myItem.tag] += myItem.budget * ratio
                         self.realm.add(newDayEval)
                     } else {
                         //print("original record %f", dayEval.first?.tot_time)
                         dayEval.first?.tot_finish += myItem.budget * ratio
+                        dayEval.first?.tagLogDone[myItem.tag] += myItem.budget * ratio
                     }
                 }
                 

@@ -27,6 +27,8 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     var textFieldBatchNo = UITextField()
     var textFieldStep = UITextField()
     
+    var textTagPopUp = UIButton()
+    
     var yOffset = 160
     var textHeight = 21
     var fieldHeight = 52
@@ -35,6 +37,8 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
     var startY = 0
     var xOffset = 50
     //var firstEdit = true
+    
+    var tagID = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -85,13 +89,26 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
         datePicker.contentHorizontalAlignment = .center
         self.view.addSubview(datePicker)
         
-        textFieldBatchNo.delegate = self
-        textFieldStep.delegate = self
+        startY += fieldHeight+bSpacing
+        textTagPopUp.frame = CGRect(x: xOffset, y: startY, width: 100, height: textHeight)
+        var menuChildren: [UIMenuElement] = []
+        
+        for idx in 0...5 {
+            menuChildren.append(UIAction(title: tagDic[idx] ?? " ", handler: actionClosure))
+        }
+        textTagPopUp.menu = UIMenu(children: menuChildren)
+        textTagPopUp.showsMenuAsPrimaryAction = true
+        textTagPopUp.changesSelectionAsPrimaryAction = true
+        textTagPopUp.setTitleColor(.blue, for: .normal)
+        textTagPopUp.backgroundColor = .lightGray
+        textTagPopUp.setTitle("Tag", for: .normal)
+        self.view.addSubview(textTagPopUp)
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(didTapSaveButton))
         
-        startY += fieldHeight+bSpacing+100
+        startY += fieldHeight+bSpacing
         textFieldBatchNo.delegate = self
+        textFieldStep.delegate = self
         textFieldBatchNo.frame = CGRect(x: 15, y: startY, width: 150, height: 50)
         textFieldBatchNo.borderStyle = UITextField.BorderStyle.roundedRect
         textFieldBatchNo.text = "Repeat # times"
@@ -118,6 +135,14 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
         
     }
     
+    func actionClosure(action: UIAction) {
+        if let key = tagDic.first(where: { $0.value == action.title })?.key {
+            // use key
+            tagID = key
+        }
+    }
+    
+    
     @objc func didBatch() {
         if let text = textField.text, !text.isEmpty {
             let KR = (textFieldKR.text?.isEmpty ?? true) ? "(No KR)" : textFieldKR.text
@@ -133,6 +158,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
                 newItem.date = date.advanced(by: Double(dayStep * aa))
                 newItem.item = text + " \u{21e8} " + (KR ?? "(No KR)")
                 newItem.budget = budget
+                newItem.tag = tagID
                 realm.add(newItem)
             }
             try! realm.commitWrite()
@@ -187,6 +213,7 @@ class EntryViewController: UIViewController, UITextFieldDelegate {
             newItem.date = date
             newItem.item = text + " \u{21e8} " + (KR ?? "(No KR)")
             newItem.budget = budget
+            newItem.tag = tagID
             realm.add(newItem)
             try! realm.commitWrite()
 

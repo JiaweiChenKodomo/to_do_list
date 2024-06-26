@@ -56,6 +56,9 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
     var animationLoaded = false
     var addAnimation = false
     
+    var tagLogSum = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] //Breakdown of time use into areas.
+    var tagLogDoneSum = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] //Breakdown of finished tasks into areas.
+    
     private let realm = try! Realm()
     
     var scrollView: UIScrollView!
@@ -436,10 +439,18 @@ class StatsViewController: UIViewController, ChartViewDelegate, UIScrollViewDele
             rawVal[index] += dayEval.tot_time
             rawVal2[index] += dayEval.tot_finish
             
-//
-            
+            if dayEval.tagLog.count == tagDic.count {
+                for ii in 0...(tagDic.count-1) { //Add up all tag log.
+                    tagLogSum[ii] += dayEval.tagLog[ii]
+                    tagLogDoneSum[ii] += dayEval.tagLogDone[ii]
+                    //print(dayEval.tagLog[ii])
+                }
+            }
             
         }
+        // For now, just print tag values
+        print(tagLogSum);
+        print(tagLogDoneSum)
         
         for aa in stride(from: wdays - 1, to: days + wdays - 1, by: 1) {
             

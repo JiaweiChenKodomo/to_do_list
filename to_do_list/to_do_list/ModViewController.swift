@@ -52,7 +52,8 @@ class ModViewController: UIViewController, UITextFieldDelegate {
         textTagPopUp.changesSelectionAsPrimaryAction = true
         textTagPopUp.setTitleColor(.blue, for: .normal)
         textTagPopUp.backgroundColor = .lightGray
-        textTagPopUp.setTitle("Tag", for: .normal)
+        tagID = item?.tag ?? 0
+        textTagPopUp.setTitle(tagDic[tagID], for: .normal)
         self.view.addSubview(textTagPopUp)
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(didTapSaveButton))

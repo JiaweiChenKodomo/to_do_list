@@ -19,7 +19,7 @@ import DropDown
  - due date
  */
 
-class checkListItem: Object {
+class checkListItem: Object, Codable {
     @objc dynamic var item: String = ""
     @objc dynamic var date: Date = Date()
     @objc dynamic var budget: Double = 0.0
@@ -29,21 +29,81 @@ class checkListItem: Object {
     @objc dynamic var timeSpent: TimeInterval = 0.0
     @objc dynamic var tag: Int = 0
     let KR = List<String>() // Will implement methods for OKR later.
-    
+
+    // MARK: - Codable Keys
+    enum CodingKeys: String, CodingKey {
+        case item, date, budget, checkIn, finished, startTime, timeSpent, tag, KR
+    }
+
+    // MARK: - Codable Initializer
+    required public convenience init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        item = try container.decode(String.self, forKey: .item)
+        date = try container.decode(Date.self, forKey: .date)
+        budget = try container.decode(Double.self, forKey: .budget)
+        checkIn = try container.decode(Bool.self, forKey: .checkIn)
+        finished = try container.decode(Bool.self, forKey: .finished)
+        startTime = try container.decode(Date.self, forKey: .startTime)
+        timeSpent = try container.decode(TimeInterval.self, forKey: .timeSpent)
+        tag = try container.decode(Int.self, forKey: .tag)
+        KR.append(objectsIn: try container.decode([String].self, forKey: .KR))
+    }
+
+    // MARK: - Encode to JSON
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(item, forKey: .item)
+        try container.encode(date, forKey: .date)
+        try container.encode(budget, forKey: .budget)
+        try container.encode(checkIn, forKey: .checkIn)
+        try container.encode(finished, forKey: .finished)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encode(timeSpent, forKey: .timeSpent)
+        try container.encode(tag, forKey: .tag)
+        try container.encode(Array(KR), forKey: .KR)
+    }
 }
 
-class dailyPerfEval: Object {
+// MARK: - Daily Performance Evaluation
+class dailyPerfEval: Object, Codable {
     @objc dynamic var tot_finish: Double = 0.0
     @objc dynamic var tot_time: Double = 0.0
     @objc dynamic var date: Date = Date()
-    let tagLog = List<Double>() //Breakdown of time use into areas.
-    let tagLogDone = List<Double>() //Breakdown of finished tasks into areas.
+    let tagLog = List<Double>() // Breakdown of time use into areas
+    let tagLogDone = List<Double>() // Breakdown of finished tasks into areas
 
+    // MARK: - Codable Keys
+    enum CodingKeys: String, CodingKey {
+        case tot_finish, tot_time, date, tagLog, tagLogDone
+    }
+
+    // MARK: - Initializer
     override init() {
         super.init()
-        // Initialize tagLog and tagLogDone with default values
         tagLog.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         tagLogDone.append(objectsIn: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    }
+
+    // MARK: - Codable Initializer
+    required public convenience init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tot_finish = try container.decode(Double.self, forKey: .tot_finish)
+        tot_time = try container.decode(Double.self, forKey: .tot_time)
+        date = try container.decode(Date.self, forKey: .date)
+        tagLog.append(objectsIn: try container.decode([Double].self, forKey: .tagLog))
+        tagLogDone.append(objectsIn: try container.decode([Double].self, forKey: .tagLogDone))
+    }
+
+    // MARK: - Encode to JSON
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(tot_finish, forKey: .tot_finish)
+        try container.encode(tot_time, forKey: .tot_time)
+        try container.encode(date, forKey: .date)
+        try container.encode(Array(tagLog), forKey: .tagLog)
+        try container.encode(Array(tagLogDone), forKey: .tagLogDone)
     }
 }
 
@@ -81,7 +141,9 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
             "Postpone",
             "Delete",
             "Statistics",
-            "Schedule"
+            "Schedule",
+            "Export Data",
+            "Import Data"
         ]
         return menu
     } ()
@@ -125,6 +187,10 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
                 self.didTapStat()
             case 3:
                 self.didTapSchedule()
+            case 4:
+                self.exportData()
+            case 5:
+                self.importData()
             default:
                 return
             }
@@ -144,8 +210,27 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         longPress.minimumPressDuration = 1.0
         table.addGestureRecognizer(longPress)
         
+        dailyBackup()
+
+        Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { _ in
+            self.dailyBackup()
+        }
+            
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appMovedToBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
     }
     
+        
+    @objc func appMovedToBackground() {
+        dailyBackup()
+    }
+        
+        
     // table function
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return data.count
@@ -401,3 +486,134 @@ extension ViewController: UIGestureRecognizerDelegate {
     }
 }
 
+// MARK: - JSON Backup / Export / Import
+
+extension ViewController {
+
+    func getExportFolder() -> URL {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = documents.appendingPathComponent("Exports")
+
+        if !FileManager.default.fileExists(atPath: folder.path) {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+
+        return folder
+    }
+
+    func dailyBackup() {
+        do {
+
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+
+            let checkItems = Array(realm.objects(checkListItem.self))
+            let perfItems = Array(realm.objects(dailyPerfEval.self))
+
+            let folder = getExportFolder()
+
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+
+            let dateStr = formatter.string(from: Date())
+
+            let checkURL = folder.appendingPathComponent("checkListItems-\(dateStr).json")
+            let perfURL = folder.appendingPathComponent("dailyPerfEval-\(dateStr).json")
+
+            try encoder.encode(checkItems).write(to: checkURL)
+            try encoder.encode(perfItems).write(to: perfURL)
+
+            cleanOldBackups(folder: folder, prefix: "checkListItems-", keep: 2)
+            cleanOldBackups(folder: folder, prefix: "dailyPerfEval-", keep: 2)
+            
+            print(checkURL.path)
+
+            print("Backup completed")
+            
+            try "test".write(to: folder.appendingPathComponent("test.txt"),
+                             atomically: true,
+                             encoding: .utf8)
+
+        } catch {
+            print("Backup failed:", error)
+        }
+    }
+
+    func cleanOldBackups(folder: URL, prefix: String, keep: Int) {
+
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: []) else { return }
+
+        let filtered = files.filter { $0.lastPathComponent.hasPrefix(prefix) }
+
+        let sorted = filtered.sorted {
+            let d0 = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+            let d1 = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+            return d0 < d1
+        }
+
+        if sorted.count > keep {
+            for file in sorted.dropLast(keep) {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
+
+    func exportData() {
+        dailyBackup()
+
+        let alert = UIAlertController(
+            title: "Export Complete",
+            message: "Backup saved to Files → On My iPhone → to_do_list → Exports",
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
+    func importData() {
+
+        do {
+
+            let folder = getExportFolder()
+
+            let files = try FileManager.default.contentsOfDirectory(at: folder,
+                includingPropertiesForKeys: [.creationDateKey],
+                options: [])
+
+            let checkFiles = files.filter { $0.lastPathComponent.hasPrefix("checkListItems-") }
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+
+            let perfFiles = files.filter { $0.lastPathComponent.hasPrefix("dailyPerfEval-") }
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+
+            guard let checkFile = checkFiles.first,
+                  let perfFile = perfFiles.first else { return }
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+
+            let checkItems = try decoder.decode([checkListItem].self, from: Data(contentsOf: checkFile))
+            let perfItems = try decoder.decode([dailyPerfEval].self, from: Data(contentsOf: perfFile))
+
+            try realm.write {
+
+                for item in checkItems {
+                    realm.add(item)
+                }
+
+                for item in perfItems {
+                    realm.add(item)
+                }
+
+            }
+
+            refresh()
+
+        } catch {
+            print("Import failed:", error)
+        }
+    }
+}
